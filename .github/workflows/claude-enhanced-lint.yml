@@ -1,0 +1,192 @@
+name: Claude Enhanced Lint & Analysis
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  push:
+    branches: [main, develop]
+
+jobs:
+  intelligent-lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Install Claude CLI
+        run: |
+          npm install -g @claude-ai/cli
+          echo "Claude CLI installed"
+      
+      - name: Run ESLint and capture output
+        id: eslint
+        continue-on-error: true
+        run: |
+          # Run ESLint and save output
+          npm run lint -- --format json > eslint-report.json 2>&1 || true
+          
+          # Also get human-readable output
+          npm run lint > eslint-output.txt 2>&1 || true
+          
+          # Count errors and warnings
+          ERRORS=$(cat eslint-report.json | jq '[.[] | .errorCount] | add' || echo "0")
+          WARNINGS=$(cat eslint-report.json | jq '[.[] | .warningCount] | add' || echo "0")
+          
+          echo "errors=$ERRORS" >> $GITHUB_OUTPUT
+          echo "warnings=$WARNINGS" >> $GITHUB_OUTPUT
+      
+      - name: Analyze with Claude SDK
+        id: claude-analysis
+        if: steps.eslint.outputs.errors != '0' || steps.eslint.outputs.warnings != '0'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Create analysis script
+          cat > analyze-lint.sh << 'EOF'
+          #!/bin/bash
+          
+          # Function to send lint errors to Claude for analysis
+          analyze_lint_errors() {
+              local eslint_json="$1"
+              local context_files="$2"
+              
+              # Create the prompt with context
+              cat > prompt.json << 'PROMPT'
+          {
+            "type": "user",
+            "message": {
+              "role": "user",
+              "content": [{
+                "type": "text",
+                "text": "You are a TypeScript/JavaScript expert helping with code quality. Analyze these ESLint results and provide:\n\n1. Priority fixes (critical errors that could cause runtime issues)\n2. Code quality improvements\n3. Suggested refactoring for maintainability\n4. Pattern-based fixes that could be applied across the codebase\n\nESLint Results:\n```json\n$(cat $eslint_json)\n```\n\nProvide actionable fixes with code examples. Focus on the most impactful improvements first."
+              }]
+            }
+          }
+          PROMPT
+              
+              # Send to Claude for analysis
+              claude -p --output-format=json --input-format=stream-json < prompt.json
+          }
+          
+          # Run analysis
+          analyze_lint_errors "eslint-report.json" "$(find src -name '*.ts' | head -5)"
+          EOF
+          
+          chmod +x analyze-lint.sh
+          
+          # Execute analysis and save output
+          ./analyze-lint.sh > claude-analysis.json 2>&1
+          
+          # Extract the analysis text
+          cat claude-analysis.json | jq -r '.result' > analysis-report.md || echo "Error processing Claude response" > analysis-report.md
+      
+      - name: Generate Statistical Code Review
+        if: github.event_name == 'pull_request'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Get changed files in PR
+          git diff --name-only origin/${{ github.base_ref }}...HEAD | grep -E '\.(ts|js|r|R)$' > changed-files.txt || true
+          
+          # Create statistical analysis prompt
+          cat > stats-review.sh << 'EOF'
+          #!/bin/bash
+          
+          # Analyze R scripts for statistical correctness
+          for file in $(grep -E '\.(r|R)$' changed-files.txt); do
+              if [ -f "$file" ]; then
+                  echo "Analyzing $file for statistical correctness..."
+                  
+                  cat > r-analysis-prompt.json << PROMPT
+          {
+            "type": "user",
+            "message": {
+              "role": "user",
+              "content": [{
+                "type": "text",
+                "text": "Review this R script for statistical correctness. Focus on:\n1. Proper use of statistical tests\n2. Correct interpretation of p-values\n3. Appropriate effect size calculations\n4. Valid confidence intervals\n5. Proper handling of missing data\n\nR Script:\n```r\n$(cat $file)\n```\n\nProvide specific feedback on any statistical issues found."
+              }]
+            }
+          }
+          PROMPT
+                  
+                  claude -p --output-format=json --input-format=stream-json < r-analysis-prompt.json | jq -r '.result' >> statistical-review.md
+                  echo -e "\n---\n" >> statistical-review.md
+              fi
+          done
+          EOF
+          
+          chmod +x stats-review.sh
+          ./stats-review.sh || echo "No R files to review" > statistical-review.md
+      
+      - name: Create GitHub Comment
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const fs = require('fs');
+            
+            // Read analysis reports
+            let comment = '## 🤖 Claude Code Analysis\n\n';
+            
+            // Add ESLint summary
+            const errors = ${{ steps.eslint.outputs.errors || 0 }};
+            const warnings = ${{ steps.eslint.outputs.warnings || 0 }};
+            
+            if (errors > 0 || warnings > 0) {
+              comment += `### ESLint Summary\n`;
+              comment += `- **Errors:** ${errors}\n`;
+              comment += `- **Warnings:** ${warnings}\n\n`;
+              
+              // Add Claude's analysis
+              try {
+                const analysis = fs.readFileSync('analysis-report.md', 'utf8');
+                comment += `### AI-Powered Code Review\n\n${analysis}\n\n`;
+              } catch (e) {
+                console.log('No Claude analysis available');
+              }
+            } else {
+              comment += '✅ **No ESLint issues found!**\n\n';
+            }
+            
+            // Add statistical review if available
+            try {
+              const statsReview = fs.readFileSync('statistical-review.md', 'utf8');
+              if (statsReview && statsReview.trim() !== 'No R files to review') {
+                comment += `### Statistical Code Review\n\n${statsReview}\n`;
+              }
+            } catch (e) {
+              console.log('No statistical review available');
+            }
+            
+            // Post comment
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+      
+      - name: Fail if critical errors
+        if: steps.eslint.outputs.errors != '0'
+        run: |
+          echo "❌ ESLint found ${{ steps.eslint.outputs.errors }} errors"
+          echo "Please review the Claude analysis above for suggested fixes"
+          exit 1

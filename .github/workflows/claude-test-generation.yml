@@ -1,0 +1,168 @@
+name: Claude Test Generation & Coverage
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_coverage:
+        description: 'Target test coverage percentage'
+        required: false
+        default: '80'
+  schedule:
+    - cron: '0 0 * * 0'  # Weekly on Sunday
+
+jobs:
+  generate-tests:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install -g @claude-ai/cli
+          npm install --save-dev jest @types/jest ts-jest
+      
+      - name: Analyze code coverage
+        id: coverage
+        run: |
+          # Run existing tests with coverage
+          npx jest --coverage --coverageReporters=json-summary --coverageReporters=text || true
+          
+          # Extract coverage data
+          if [ -f coverage/coverage-summary.json ]; then
+            TOTAL_COVERAGE=$(cat coverage/coverage-summary.json | jq -r '.total.lines.pct')
+            echo "current_coverage=$TOTAL_COVERAGE" >> $GITHUB_OUTPUT
+          else
+            echo "current_coverage=0" >> $GITHUB_OUTPUT
+          fi
+          
+          # Find uncovered files
+          find src -name "*.ts" -not -path "*/node_modules/*" | while read file; do
+            if ! grep -q "$file" coverage/lcov.info 2>/dev/null; then
+              echo "$file" >> uncovered-files.txt
+            fi
+          done
+      
+      - name: Generate tests with Claude
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TARGET_COVERAGE: ${{ github.event.inputs.target_coverage || '80' }}
+        run: |
+          # Create test generation script
+          cat > generate-tests.sh << 'EOF'
+          #!/bin/bash
+          
+          generate_test_for_file() {
+              local source_file="$1"
+              local test_file="${source_file%.ts}.test.ts"
+              
+              # Skip if test already exists
+              if [ -f "$test_file" ]; then
+                  echo "Test already exists for $source_file"
+                  return
+              fi
+              
+              echo "Generating test for $source_file..."
+              
+              # Create prompt for Claude
+              cat > test-prompt.json << PROMPT
+          {
+            "type": "user",
+            "message": {
+              "role": "user",
+              "content": [{
+                "type": "text",
+                "text": "Generate comprehensive Jest tests for this TypeScript file. Include:\n1. Unit tests for all exported functions/classes\n2. Edge cases and error handling\n3. Mock external dependencies\n4. Tests for meta-analysis statistical functions with known inputs/outputs\n5. Async operation tests where applicable\n\nSource code:\n```typescript\n$(cat $source_file)\n```\n\nGenerate only the test code in Jest format. Include describe blocks, proper imports, and beforeEach/afterEach as needed."
+              }]
+            }
+          }
+          PROMPT
+              
+              # Generate test with Claude
+              claude -p --output-format=json --input-format=stream-json < test-prompt.json | jq -r '.result' > "$test_file"
+              
+              # Add to git
+              git add "$test_file"
+          }
+          
+          # Generate tests for uncovered files
+          if [ -f uncovered-files.txt ]; then
+              while read file; do
+                  generate_test_for_file "$file"
+              done < uncovered-files.txt
+          fi
+          
+          # Generate integration tests for R scripts
+          cat > integration-test-prompt.json << 'PROMPT'
+          {
+            "type": "user",
+            "message": {
+              "role": "user",
+              "content": [{
+                "type": "text",
+                "text": "Generate integration tests for the MCP Meta-Analysis Server that verify:\n1. R script execution with sample data\n2. Correct statistical calculations (effect sizes, confidence intervals)\n3. Forest plot generation\n4. Session management\n5. Error handling for invalid data\n\nUse Jest with proper mocking of the R executor. Include test data that represents realistic meta-analysis scenarios."
+              }]
+            }
+          }
+          PROMPT
+          
+          claude -p --output-format=json --input-format=stream-json < integration-test-prompt.json | jq -r '.result' > "src/__tests__/integration.test.ts"
+          git add "src/__tests__/integration.test.ts"
+          EOF
+          
+          chmod +x generate-tests.sh
+          ./generate-tests.sh
+      
+      - name: Run new tests
+        id: test-results
+        run: |
+          # Run all tests including newly generated ones
+          npm test -- --coverage || true
+          
+          # Get new coverage
+          NEW_COVERAGE=$(cat coverage/coverage-summary.json | jq -r '.total.lines.pct')
+          echo "new_coverage=$NEW_COVERAGE" >> $GITHUB_OUTPUT
+      
+      - name: Create pull request
+        if: steps.coverage.outputs.current_coverage < env.TARGET_COVERAGE
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "test: Add Claude-generated tests to improve coverage"
+          title: "🧪 Improve test coverage from ${{ steps.coverage.outputs.current_coverage }}% to ${{ steps.test-results.outputs.new_coverage }}%"
+          body: |
+            ## 🤖 Claude Test Generation Report
+            
+            This PR was automatically generated to improve test coverage.
+            
+            ### Coverage Summary
+            - **Previous coverage:** ${{ steps.coverage.outputs.current_coverage }}%
+            - **New coverage:** ${{ steps.test-results.outputs.new_coverage }}%
+            - **Target coverage:** ${{ env.TARGET_COVERAGE }}%
+            
+            ### Generated Tests
+            - Unit tests for uncovered TypeScript files
+            - Integration tests for R statistical functions
+            - Edge case and error handling tests
+            
+            ### Next Steps
+            1. Review the generated tests for accuracy
+            2. Ensure statistical test cases are correct
+            3. Add any missing test scenarios
+            4. Merge to improve overall code quality
+            
+            ---
+            *Generated by Claude Code SDK*
+          branch: claude-test-generation
+          delete-branch: true

@@ -4,6 +4,7 @@ description: Professional MCP server for conducting meta-analyses with automated
 icon: 📊
 github_repo: https://github.com/matheusrech/mcp-meta-analysis-with-r
 dockerfile: Dockerfile.production
+image: mmrech/mcp-meta-analysis-r:latest
 env:
   - name: NODE_ENV
     description: Node environment (production/development)

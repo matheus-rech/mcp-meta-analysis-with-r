@@ -1,0 +1,54 @@
+name: Claude On-Demand Review
+
+on:
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+
+jobs:
+  claude-on-demand-review:
+    if: |
+      (github.event_name == 'issue_comment' && github.event.issue.pull_request && contains(github.event.comment.body, '@claude-review')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude-review'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Claude On-Demand Review
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          direct_prompt: |
+            A team member has specifically requested a code review using @claude-review.
+            
+            Please provide a detailed review focusing on:
+            
+            **Context-Aware Analysis:**
+            - Review the specific changes in this PR
+            - Consider the comment context if this was triggered by a specific question
+            - Focus on areas of concern mentioned in the triggering comment
+            
+            **Comprehensive Review Areas:**
+            - Code correctness and logic
+            - R/Statistics best practices (if applicable)
+            - Meta-analysis methodology (if applicable)
+            - Error handling and edge cases
+            - Code readability and maintainability
+            - Performance considerations
+            - Security implications
+            
+            **Actionable Feedback:**
+            - Provide specific, actionable suggestions
+            - Include code examples where helpful
+            - Prioritize feedback by importance
+            - Suggest testing approaches if needed
+            
+            If triggered by a specific comment, address the particular concerns raised while providing a holistic review.

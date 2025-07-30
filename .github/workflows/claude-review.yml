@@ -1,0 +1,45 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+  pull_request_review:
+    types: [submitted]
+
+jobs:
+  claude-review:
+    if: github.event_name == 'pull_request' || (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude-review'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          
+      - name: Claude Code Review
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          direct_prompt: |
+            Please provide a comprehensive code review of this pull request. Focus on:
+            
+            1. **Code Quality**: Check for code clarity, maintainability, and adherence to best practices
+            2. **Security**: Identify potential security vulnerabilities or concerns
+            3. **Performance**: Look for performance issues or optimization opportunities
+            4. **Testing**: Verify if adequate tests are included or suggest testing improvements
+            5. **Documentation**: Check if code changes require documentation updates
+            6. **R/Statistics Specific**: For R code, verify statistical methods, data handling, and meta-analysis practices
+            
+            For each issue found, provide:
+            - Clear explanation of the problem
+            - Specific line references when applicable
+            - Suggested improvements or fixes
+            - Severity level (critical, high, medium, low)
+            
+            If the code looks good overall, highlight the positive aspects and any innovative approaches used.
+            
+            Format your review with clear sections and use markdown for better readability.

@@ -1,5 +1,5 @@
 import csvParser from 'csv-parser';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { Readable } from 'stream';
 import { StudyData, StudyDataSchema, ValidationError } from './types.js';
 import { logger } from './logger.js';
@@ -57,14 +57,45 @@ export class DataValidator {
     try {
       // Decode base64 content
       const buffer = Buffer.from(base64Content, 'base64');
-      const workbook = XLSX.read(buffer, { type: 'buffer' });
+      
+      // Create workbook and load from buffer
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
       
       // Use first worksheet
-      const worksheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[worksheetName];
+      const worksheet = workbook.getWorksheet(1);
+      if (!worksheet) {
+        throw new ValidationError('No worksheet found in Excel file');
+      }
       
       // Convert to JSON
-      const data = XLSX.utils.sheet_to_json(worksheet);
+      const data: any[] = [];
+      const headerRow = worksheet.getRow(1);
+      const headers: string[] = [];
+      
+      // Extract headers
+      headerRow.eachCell((cell, colNumber) => {
+        headers[colNumber - 1] = cell.value?.toString() || `col_${colNumber}`;
+      });
+      
+      // Extract data rows
+      worksheet.eachRow((row, rowNumber) => {
+        if (rowNumber === 1) return; // Skip header row
+        
+        const rowData: any = {};
+        row.eachCell((cell, colNumber) => {
+          const header = headers[colNumber - 1];
+          if (header) {
+            rowData[header] = cell.value;
+          }
+        });
+        
+        // Only add rows with data
+        if (Object.keys(rowData).length > 0) {
+          data.push(rowData);
+        }
+      });
+      
       return data;
     } catch (error) {
       throw new ValidationError(`Excel parsing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);

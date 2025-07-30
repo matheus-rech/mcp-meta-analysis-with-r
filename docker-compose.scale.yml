@@ -1,0 +1,140 @@
+version: '3.8'
+
+# Docker Compose configuration for horizontal scaling
+services:
+  # Load Balancer
+  nginx:
+    image: nginx:alpine
+    container_name: meta-analysis-lb
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx-scale.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    networks:
+      - meta-analysis-network
+    depends_on:
+      - meta-analysis-server-1
+      - meta-analysis-server-2
+      - meta-analysis-server-3
+
+  # Multiple MCP Server Instances
+  meta-analysis-server-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    container_name: mcp-meta-analysis-1
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - SERVER_ID=server-1
+      - PORT=3000
+    volumes:
+      - ./user_sessions:/app/user_sessions
+      - ./logs:/app/logs
+    networks:
+      - meta-analysis-network
+
+  meta-analysis-server-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    container_name: mcp-meta-analysis-2
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - SERVER_ID=server-2
+      - PORT=3000
+    volumes:
+      - ./user_sessions:/app/user_sessions
+      - ./logs:/app/logs
+    networks:
+      - meta-analysis-network
+
+  meta-analysis-server-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.production
+    container_name: mcp-meta-analysis-3
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - LOG_LEVEL=info
+      - SERVER_ID=server-3
+      - PORT=3000
+    volumes:
+      - ./user_sessions:/app/user_sessions
+      - ./logs:/app/logs
+    networks:
+      - meta-analysis-network
+
+  # Shared Redis for session management
+  redis:
+    image: redis:7-alpine
+    container_name: meta-analysis-redis-cluster
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-cluster-data:/data
+    networks:
+      - meta-analysis-network
+    ports:
+      - "6379:6379"
+
+  # PostgreSQL for persistent session storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: meta-analysis-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=meta_analysis
+      - POSTGRES_USER=meta_user
+      - POSTGRES_PASSWORD=meta_password_secure_123
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - meta-analysis-network
+    ports:
+      - "5432:5432"
+
+  # Monitoring Stack
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: meta-analysis-prometheus-scale
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus-scale.yml:/etc/prometheus/prometheus.yml
+      - prometheus-scale-data:/prometheus
+    networks:
+      - meta-analysis-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: meta-analysis-grafana-scale
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana-scale-data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning
+    networks:
+      - meta-analysis-network
+
+networks:
+  meta-analysis-network:
+    driver: bridge
+
+volumes:
+  redis-cluster-data:
+  postgres-data:
+  prometheus-scale-data:
+  grafana-scale-data:

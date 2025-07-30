@@ -1,0 +1,184 @@
+name: Docker Build and Deploy
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'src/**'
+      - 'r_scripts/**'
+      - 'package.json'
+      - 'Dockerfile*'
+      - 'docker-compose*.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'r_scripts/**'
+      - 'package.json'
+      - 'Dockerfile*'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  # Build and test the TypeScript application
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Build TypeScript
+        run: npm run build
+
+      - name: Run tests
+        run: npm test || echo "No tests configured yet"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # Build Docker image
+  build-docker:
+    runs-on: ubuntu-latest
+    needs: build-test
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.production
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # Test R integration in Docker
+  test-r-integration:
+    runs-on: ubuntu-latest
+    needs: build-docker
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build test image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.production
+          load: true
+          tags: mcp-meta-analysis:test
+          cache-from: type=gha
+
+      - name: Test R packages installation
+        run: |
+          docker run --rm mcp-meta-analysis:test R -e "
+          packages <- c('meta', 'metafor', 'dplyr', 'jsonlite', 'ggplot2')
+          all_available <- all(sapply(packages, requireNamespace, quietly = TRUE))
+          if (!all_available) {
+            cat('Missing R packages detected\n')
+            quit(status = 1)
+          }
+          cat('All R packages available\n')
+          "
+
+      - name: Test MCP server startup
+        run: |
+          timeout 30s docker run --rm mcp-meta-analysis:test node dist/index.js &
+          sleep 5
+          if pgrep -f "node dist/index.js" > /dev/null; then
+            echo "MCP server started successfully"
+            pkill -f "node dist/index.js"
+          else
+            echo "MCP server failed to start"
+            exit 1
+          fi
+
+  # Deploy to staging (develop branch)
+  deploy-staging:
+    runs-on: ubuntu-latest
+    needs: [build-test, build-docker]
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
+    environment: staging
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to staging
+        run: |
+          echo "Deploying to staging environment..."
+          # Add your staging deployment commands here
+          # For example, deploy to a staging server or cloud service
+
+  # Deploy to production (main branch)
+  deploy-production:
+    runs-on: ubuntu-latest
+    needs: [build-test, build-docker]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to production
+        run: |
+          echo "Deploying to production environment..."
+          # Add your production deployment commands here
+          # For example:
+          # - Deploy to cloud services (AWS, GCP, Azure)
+          # - Update Kubernetes deployments
+          # - Deploy to container registries

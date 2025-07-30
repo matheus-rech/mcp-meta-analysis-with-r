@@ -1,0 +1,282 @@
+---
+title: "Meta-Analysis Report: `r params$project_name`"
+author: "MCP Meta-Analysis Server"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    theme: flatly
+    toc: true
+    toc_float: true
+    code_folding: hide
+    df_print: paged
+  pdf_document:
+    toc: true
+    number_sections: true
+  word_document:
+    toc: true
+params:
+  project_name: "Meta-Analysis"
+  results: null
+  parameters: null
+  studies: null
+  session_id: null
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE,
+  fig.width = 12,
+  fig.height = 8,
+  dpi = 300
+)
+
+# Load required libraries
+library(meta)
+library(metafor)
+library(ggplot2)
+library(knitr)
+library(dplyr)
+
+# Extract parameters
+results <- params$results
+parameters <- params$parameters
+studies <- params$studies
+```
+
+# Executive Summary
+
+This meta-analysis examined the effect of interventions across `r length(studies)` studies using `r parameters$effect_measure` as the effect measure. The analysis employed a `r results$model_info$model_type` effects model and found an overall effect of `r sprintf("%.3f", results$overall_effect$estimate)` (95% CI: `r sprintf("%.3f", results$overall_effect$ci_lower)` to `r sprintf("%.3f", results$overall_effect$ci_upper)`, p = `r sprintf("%.4f", results$overall_effect$p_value)`).
+
+## Key Findings
+
+- **Overall Effect**: `r sprintf("%.3f", results$overall_effect$estimate)` [`r sprintf("%.3f", results$overall_effect$ci_lower)`, `r sprintf("%.3f", results$overall_effect$ci_upper)`]
+- **Statistical Significance**: `r ifelse(results$overall_effect$p_value < 0.05, "Significant", "Not significant")` (p = `r sprintf("%.4f", results$overall_effect$p_value)`)
+- **Heterogeneity**: I² = `r sprintf("%.1f", results$heterogeneity$i_squared)`% (`r ifelse(results$heterogeneity$i_squared < 25, "low", ifelse(results$heterogeneity$i_squared < 75, "moderate", "high"))`)
+- **Studies Included**: `r results$model_info$studies_included`
+
+# Methods
+
+## Search Strategy and Selection Criteria
+
+*[This section would typically describe the search strategy, databases searched, inclusion/exclusion criteria, etc. - to be filled by the researcher]*
+
+## Data Extraction
+
+Data were extracted for the following variables:
+- Study identification and publication year
+- Sample sizes for treatment and control groups
+- Outcome measures specific to `r parameters$effect_measure` calculation
+- Quality assessment scores (where available)
+
+## Statistical Analysis
+
+Meta-analysis was performed using the `meta` package in R. The following approach was used:
+
+- **Effect Measure**: `r parameters$effect_measure`
+- **Statistical Model**: `r results$model_info$model_type` effects model using `r results$model_info$method` method
+- **Confidence Level**: `r parameters$confidence_level * 100`%
+- **Heterogeneity Assessment**: I² statistic, Q-test, and τ²
+- **Publication Bias**: `r ifelse(!is.null(results$publication_bias), "Assessed using funnel plots, Egger's test, and Begg's test", "Not assessed")`
+
+# Results
+
+## Study Characteristics
+
+```{r study-characteristics}
+# Create study characteristics table
+study_table <- data.frame(
+  Study = sapply(results$individual_studies, function(x) x$study_id),
+  Effect = sprintf("%.3f", sapply(results$individual_studies, function(x) x$effect)),
+  CI_Lower = sprintf("%.3f", sapply(results$individual_studies, function(x) x$ci_lower)),
+  CI_Upper = sprintf("%.3f", sapply(results$individual_studies, function(x) x$ci_upper)),
+  Weight = sprintf("%.1f%%", sapply(results$individual_studies, function(x) x$weight))
+)
+
+kable(study_table, 
+      col.names = c("Study", "Effect Size", "95% CI Lower", "95% CI Upper", "Weight"),
+      caption = "Individual Study Results")
+```
+
+## Overall Effect
+
+The meta-analysis of `r results$model_info$studies_included` studies showed:
+
+- **Overall `r parameters$effect_measure`**: `r sprintf("%.3f", results$overall_effect$estimate)` (95% CI: `r sprintf("%.3f", results$overall_effect$ci_lower)` to `r sprintf("%.3f", results$overall_effect$ci_upper)`)
+- **Z-score**: `r sprintf("%.3f", results$overall_effect$z_score)`
+- **p-value**: `r sprintf("%.4f", results$overall_effect$p_value)`
+- **Statistical significance**: `r ifelse(results$overall_effect$p_value < 0.05, "Yes", "No")` (α = 0.05)
+
+## Heterogeneity Assessment
+
+```{r heterogeneity-table}
+het_table <- data.frame(
+  Statistic = c("I² (%)", "Q-statistic", "Q p-value", "τ² (tau-squared)"),
+  Value = c(
+    sprintf("%.1f", results$heterogeneity$i_squared),
+    sprintf("%.3f", results$heterogeneity$q_statistic),
+    sprintf("%.4f", results$heterogeneity$q_p_value),
+    sprintf("%.4f", results$heterogeneity$tau_squared)
+  ),
+  Interpretation = c(
+    ifelse(results$heterogeneity$i_squared < 25, "Low heterogeneity", 
+           ifelse(results$heterogeneity$i_squared < 75, "Moderate heterogeneity", "High heterogeneity")),
+    ifelse(results$heterogeneity$q_p_value < 0.05, "Significant heterogeneity", "No significant heterogeneity"),
+    "",
+    ifelse(results$heterogeneity$tau_squared > 0.1, "Substantial between-study variance", "Low between-study variance")
+  )
+)
+
+kable(het_table, caption = "Heterogeneity Assessment")
+```
+
+**Interpretation**: The I² statistic of `r sprintf("%.1f", results$heterogeneity$i_squared)`% indicates `r ifelse(results$heterogeneity$i_squared < 25, "low", ifelse(results$heterogeneity$i_squared < 75, "moderate", "high"))` heterogeneity between studies. `r ifelse(results$heterogeneity$q_p_value < 0.05, "The Q-test suggests significant statistical heterogeneity (p < 0.05), indicating that the studies may not be estimating the same underlying effect.", "The Q-test does not indicate significant statistical heterogeneity (p ≥ 0.05).")`
+
+## Forest Plot
+
+```{r forest-plot, fig.cap="Forest plot showing individual study effects and overall pooled estimate"}
+# Note: In actual implementation, this would load the generated forest plot
+# For template purposes, we'll create a basic version
+
+# Create a basic forest plot representation
+if (file.exists("output/forest_plot.png")) {
+  knitr::include_graphics("output/forest_plot.png")
+} else {
+  cat("Forest plot would be displayed here (output/forest_plot.png)")
+}
+```
+
+`r if(!is.null(results$publication_bias)) paste("## Publication Bias Assessment")`
+
+```{r publication-bias, eval=!is.null(results$publication_bias)}
+if (!is.null(results$publication_bias)) {
+  bias_table <- data.frame(
+    Test = character(0),
+    Statistic = character(0),
+    P_value = character(0),
+    Interpretation = character(0)
+  )
+  
+  if (!is.null(results$publication_bias$egger_test)) {
+    bias_table <- rbind(bias_table, data.frame(
+      Test = "Egger's Test",
+      Statistic = sprintf("%.3f", results$publication_bias$egger_test$bias),
+      P_value = sprintf("%.4f", results$publication_bias$egger_test$p_value),
+      Interpretation = ifelse(results$publication_bias$egger_test$p_value < 0.05,
+                             "Significant asymmetry", "No significant asymmetry")
+    ))
+  }
+  
+  if (!is.null(results$publication_bias$begg_test)) {
+    bias_table <- rbind(bias_table, data.frame(
+      Test = "Begg's Test",
+      Statistic = "-",
+      P_value = sprintf("%.4f", results$publication_bias$begg_test$p_value),
+      Interpretation = ifelse(results$publication_bias$begg_test$p_value < 0.05,
+                             "Significant publication bias", "No significant publication bias")
+    ))
+  }
+  
+  if (nrow(bias_table) > 0) {
+    kable(bias_table, caption = "Publication Bias Assessment")
+  }
+}
+```
+
+```{r funnel-plot, eval=!is.null(results$publication_bias), fig.cap="Funnel plot for assessment of publication bias"}
+# Display funnel plot if available
+if (file.exists("output/funnel_plot.png")) {
+  knitr::include_graphics("output/funnel_plot.png")
+} else {
+  cat("Funnel plot would be displayed here (output/funnel_plot.png)")
+}
+```
+
+`r if(!is.null(results$publication_bias$trim_fill)) paste("### Trim and Fill Analysis")`
+
+```{r trim-fill, eval=!is.null(results$publication_bias$trim_fill)}
+if (!is.null(results$publication_bias$trim_fill)) {
+  cat("Trim and fill analysis suggests", results$publication_bias$trim_fill$imputed_studies, 
+      "potentially missing studies. The adjusted estimate is", 
+      sprintf("%.3f", results$publication_bias$trim_fill$adjusted_estimate),
+      "compared to the original estimate of",
+      sprintf("%.3f", results$overall_effect$estimate), ".")
+}
+```
+
+# Discussion
+
+## Summary of Findings
+
+This meta-analysis of `r results$model_info$studies_included` studies provides evidence for `r ifelse(results$overall_effect$p_value < 0.05, "a statistically significant", "no statistically significant")` effect of the intervention. The overall `r parameters$effect_measure` of `r sprintf("%.3f", results$overall_effect$estimate)` (95% CI: `r sprintf("%.3f", results$overall_effect$ci_lower)` to `r sprintf("%.3f", results$overall_effect$ci_upper)`) suggests `r ifelse(parameters$effect_measure %in% c("OR", "RR", "HR"), ifelse(results$overall_effect$estimate > 1, "an increased", "a decreased"), ifelse(results$overall_effect$estimate > 0, "an increased", "a decreased"))` effect.
+
+## Heterogeneity
+
+The observed heterogeneity (I² = `r sprintf("%.1f", results$heterogeneity$i_squared)`%) is `r ifelse(results$heterogeneity$i_squared < 25, "low, suggesting that the studies are relatively homogeneous", ifelse(results$heterogeneity$i_squared < 75, "moderate, indicating some variation between studies that may warrant investigation", "high, indicating substantial variation between studies that should be explored through subgroup analyses or meta-regression"))`.
+
+`r if(!is.null(results$publication_bias)) paste("## Publication Bias")`
+
+```{r publication-bias-discussion, results='asis', eval=!is.null(results$publication_bias)}
+if (!is.null(results$publication_bias)) {
+  egger_sig <- !is.null(results$publication_bias$egger_test) && 
+               results$publication_bias$egger_test$p_value < 0.05
+  begg_sig <- !is.null(results$publication_bias$begg_test) && 
+              results$publication_bias$begg_test$p_value < 0.05
+  
+  if (egger_sig || begg_sig) {
+    cat("Statistical tests suggest potential publication bias. ")
+    if (egger_sig) cat("Egger's test indicates significant funnel plot asymmetry (p =", 
+                       sprintf("%.4f", results$publication_bias$egger_test$p_value), "). ")
+    if (begg_sig) cat("Begg's test suggests significant publication bias (p =", 
+                      sprintf("%.4f", results$publication_bias$begg_test$p_value), "). ")
+    cat("These findings should be interpreted with caution, and efforts should be made to identify unpublished studies.")
+  } else {
+    cat("Statistical tests do not provide strong evidence of publication bias, though the power of these tests may be limited with few studies.")
+  }
+}
+```
+
+## Limitations
+
+- The number of included studies (`r results$model_info$studies_included`) may limit the power to detect heterogeneity and publication bias
+- `r ifelse(results$heterogeneity$i_squared > 50, "The moderate to high heterogeneity suggests caution in interpreting the pooled estimate", "The low heterogeneity supports the validity of the pooled estimate")`
+- Clinical and methodological diversity between studies may not be fully captured by statistical measures
+
+## Conclusions
+
+Based on the available evidence from `r results$model_info$studies_included` studies, `r ifelse(results$overall_effect$p_value < 0.05, paste("there is", ifelse(results$overall_effect$p_value < 0.001, "strong", "moderate"), "evidence for an effect"), "there is insufficient evidence to conclude a significant effect")`. `r ifelse(results$heterogeneity$i_squared > 50, "However, the heterogeneity between studies suggests that the effect may vary across different populations or settings.", "The low heterogeneity supports the consistency of the effect across studies.")`
+
+# Technical Details
+
+## Software and Packages
+
+- **R Version**: `r R.version.string`
+- **Meta-analysis package**: meta (version `r packageVersion("meta")`)
+- **Additional packages**: metafor, ggplot2, knitr
+
+## Session Information
+
+```{r session-info}
+sessionInfo()
+```
+
+## Analysis Parameters
+
+```{r analysis-params}
+param_table <- data.frame(
+  Parameter = c("Effect Measure", "Analysis Model", "Confidence Level", 
+                "Heterogeneity Test", "Publication Bias Assessment"),
+  Value = c(parameters$effect_measure, 
+            results$model_info$model_type,
+            paste0(parameters$confidence_level * 100, "%"),
+            "Yes",
+            ifelse(!is.null(results$publication_bias), "Yes", "No"))
+)
+
+kable(param_table, caption = "Analysis Parameters")
+```
+
+---
+
+*Report generated on `r Sys.Date()` by MCP Meta-Analysis Server (Session ID: `r params$session_id`)*

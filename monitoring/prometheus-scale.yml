@@ -1,0 +1,84 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+rule_files:
+  - "alert_rules.yml"
+
+scrape_configs:
+  # MCP Meta-Analysis Servers
+  - job_name: 'meta-analysis-servers'
+    static_configs:
+      - targets:
+        - 'meta-analysis-server-1:3000'
+        - 'meta-analysis-server-2:3000'
+        - 'meta-analysis-server-3:3000'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Redis monitoring
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+
+  # PostgreSQL monitoring
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres:5432']
+
+  # Nginx monitoring
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:80']
+
+  # System metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Custom metrics for meta-analysis
+recording_rules:
+  - name: meta_analysis_rules
+    rules:
+    - record: meta_analysis:active_sessions:rate5m
+      expr: rate(meta_analysis_sessions_active[5m])
+    
+    - record: meta_analysis:analysis_duration:avg5m
+      expr: rate(meta_analysis_duration_seconds_sum[5m]) / rate(meta_analysis_duration_seconds_count[5m])
+    
+    - record: meta_analysis:error_rate:rate5m
+      expr: rate(meta_analysis_errors_total[5m]) / rate(meta_analysis_requests_total[5m])
+
+# Alert rules
+alert_rules:
+  - name: meta_analysis_alerts
+    rules:
+    - alert: HighErrorRate
+      expr: meta_analysis:error_rate:rate5m > 0.1
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High error rate in meta-analysis server"
+        
+    - alert: ServerDown
+      expr: up{job="meta-analysis-servers"} == 0
+      for: 1m
+      labels:
+        severity: critical
+      annotations:
+        summary: "Meta-analysis server is down"
+        
+    - alert: HighMemoryUsage
+      expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes > 0.9
+      for: 5m
+      labels:
+        severity: warning
+      annotations:
+        summary: "High memory usage on server"

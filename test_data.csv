@@ -1,0 +1,6 @@
+study_name,n_treatment,n_control,events_treatment,events_control,year
+Smith 2020,100,95,45,38,2020
+Jones 2021,120,110,55,42,2021
+Brown 2019,85,90,30,35,2019
+Davis 2022,150,140,68,58,2022
+Wilson 2021,95,88,38,32,2021

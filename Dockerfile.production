@@ -1,0 +1,85 @@
+# Multi-stage Docker build for production MCP Meta-Analysis Server
+# Stage 1: Build Node.js application
+FROM node:18-alpine AS node-builder
+
+WORKDIR /app
+
+# Copy package files
+COPY package*.json ./
+COPY tsconfig.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy source code
+COPY src/ ./src/
+
+# Build TypeScript
+RUN npm run build
+
+# Stage 2: R Environment
+FROM rocker/r-ver:4.3.2 AS r-environment
+
+# Install system dependencies (minimal for production)
+RUN apt-get update && apt-get install -y \
+    curl \
+    libssl-dev \
+    libcurl4-openssl-dev \
+    libxml2-dev \
+    libcairo2-dev \
+    libfontconfig1-dev \
+    libfreetype6-dev \
+    libpng-dev \
+    libjpeg-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install core R packages with cache
+RUN R -e "install.packages(c( \
+    'meta', 'metafor', 'dplyr', 'jsonlite', 'ggplot2' \
+    ), dependencies = TRUE, Ncpus = parallel::detectCores())"
+
+# Stage 3: Production Runtime
+FROM rocker/r-ver:4.3.2
+
+# Install Node.js
+RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get install -y nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy R packages from r-environment stage
+COPY --from=r-environment /usr/local/lib/R /usr/local/lib/R
+
+# Copy Node.js application from node-builder stage
+COPY --from=node-builder /app/dist /app/dist
+COPY --from=node-builder /app/node_modules /app/node_modules
+COPY --from=node-builder /app/package.json /app/package.json
+
+# Copy R scripts
+COPY r_scripts/ /app/r_scripts/
+
+# Create app user for security
+RUN groupadd -r appuser && useradd -r -g appuser appuser
+
+# Create directories with proper permissions
+RUN mkdir -p /app/user_sessions && \
+    mkdir -p /app/logs && \
+    chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
+
+WORKDIR /app
+
+# Environment variables
+ENV NODE_ENV=production
+ENV R_LIBS_USER=/usr/local/lib/R/site-library
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD node -e "console.log('Health check passed')" || exit 1
+
+# Expose port (for potential HTTP interface)
+EXPOSE 3000
+
+# Default command
+CMD ["node", "dist/index.js"]

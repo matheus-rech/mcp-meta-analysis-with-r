@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "meta-analysis": {
+      "command": "node",
+      "args": ["dist/index.js"],
+      "cwd": "/Users/matheusrech/mcp-meta-analysis-with-r",
+      "env": {
+        "NODE_ENV": "development",
+        "LOG_LEVEL": "debug"
+      }
+    }
+  }
+}

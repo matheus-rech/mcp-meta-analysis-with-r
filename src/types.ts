@@ -41,7 +41,7 @@ export interface MetaAnalysisSession {
   project_name: string;
   created_at: Date;
   updated_at: Date;
-  status: 'active' | 'completed' | 'error';
+  status: 'active' | 'completed' | 'error' | 'failed' | 'analysis';
   workflow_stage: 'initialization' | 'data_upload' | 'validation' | 'analysis' | 'reporting';
   parameters: AnalysisParameters;
   study_data: StudyData[];

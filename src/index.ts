@@ -25,7 +25,7 @@ import {
   StatisticalError
 } from './types.js';
 
-class MetaAnalysisMCPServer {
+export class MetaAnalysisMCPServer {
   private server: Server;
   private sessionManager: SessionManager;
   private rExecutor: RExecutor;

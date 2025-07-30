@@ -62,8 +62,12 @@ export class RExecutor {
     const hasR = await this.checkRAvailable();
     
     if (!useDocker && !hasR) {
-      logger.warn(`Neither Docker nor R available for session ${sessionId}, using mock results`);
-      return this.generateMockResults(studies, parameters);
+      throw new Error(
+        'Meta-analysis requires either Docker or R to be installed.\n\n' +
+        'Option 1: Install R from https://www.r-project.org/\n' +
+        'Option 2: Build the Docker image with: docker build -f Dockerfile.production -t mcp-meta-analysis-r:latest .\n\n' +
+        'For production use, Docker is recommended for consistent results.'
+      );
     }
 
     logger.info(`Running R script with ${useDocker ? 'Docker' : 'direct R'} for session ${sessionId}`);
@@ -86,6 +90,12 @@ export class RExecutor {
     await fs.writeFile(scriptFile, rScript);
 
     const useDocker = await this.checkDockerAvailable();
+    const hasR = await this.checkRAvailable();
+    
+    if (!useDocker && !hasR) {
+      throw new Error('Plot generation requires either Docker or R to be installed.');
+    }
+    
     if (useDocker) {
       await this.runRScriptInDocker(sessionId, scriptFile, sessionDir);
     } else {
@@ -104,6 +114,12 @@ export class RExecutor {
     await fs.writeFile(scriptFile, rScript);
 
     const useDocker = await this.checkDockerAvailable();
+    const hasR = await this.checkRAvailable();
+    
+    if (!useDocker && !hasR) {
+      throw new Error('Plot generation requires either Docker or R to be installed.');
+    }
+    
     if (useDocker) {
       await this.runRScriptInDocker(sessionId, scriptFile, sessionDir);
     } else {
@@ -329,73 +345,4 @@ if (file.exists(results_file)) {
 `;
   }
 
-  private generateMockResults(studies: StudyData[], parameters: AnalysisParameters): MetaAnalysisResults {
-    // Generate realistic mock results for demonstration
-    const effectEstimate = parameters.effect_measure === 'OR' || parameters.effect_measure === 'RR' 
-      ? 0.85 + Math.random() * 0.3  // For ratios
-      : -0.5 + Math.random() * 1.0;  // For differences
-
-    const se = 0.1 + Math.random() * 0.2;
-    const ciLower = effectEstimate - 1.96 * se;
-    const ciUpper = effectEstimate + 1.96 * se;
-    const zScore = effectEstimate / se;
-    const pValue = 2 * (1 - this.normalCDF(Math.abs(zScore)));
-
-    // Mock heterogeneity
-    const qStat = studies.length * (1 + Math.random() * 2);
-    const qPValue = Math.random() * 0.5;
-    const i2 = Math.max(0, (1 - (studies.length - 1) / qStat) * 100);
-    const tau2 = Math.random() * 0.1;
-
-    return {
-      overall_effect: {
-        estimate: effectEstimate,
-        ci_lower: ciLower,
-        ci_upper: ciUpper,
-        z_score: zScore,
-        p_value: pValue
-      },
-      heterogeneity: {
-        q_statistic: qStat,
-        q_p_value: qPValue,
-        i_squared: i2,
-        tau_squared: tau2
-      },
-      individual_studies: studies.map((study, i) => {
-        const studyEffect = effectEstimate + (Math.random() - 0.5) * 0.5;
-        const studySE = 0.1 + Math.random() * 0.3;
-        return {
-          study_id: study.study_name,
-          effect: studyEffect,
-          ci_lower: studyEffect - 1.96 * studySE,
-          ci_upper: studyEffect + 1.96 * studySE,
-          weight: 100 / studies.length
-        };
-      }),
-      model_info: {
-        model_type: parameters.analysis_model === 'auto' 
-          ? (i2 > 50 ? 'random' : 'fixed') 
-          : parameters.analysis_model as 'fixed' | 'random',
-        method: 'REML',
-        studies_included: studies.length
-      },
-      publication_bias: {
-        egger_test: {
-          bias: Math.random() * 2 - 1,
-          p_value: Math.random()
-        },
-        begg_test: {
-          p_value: Math.random()
-        }
-      }
-    };
-  }
-
-  private normalCDF(x: number): number {
-    // Approximation of normal CDF
-    const t = 1 / (1 + 0.2316419 * Math.abs(x));
-    const d = 0.3989423 * Math.exp(-x * x / 2);
-    const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274))));
-    return x > 0 ? 1 - p : p;
-  }
 }

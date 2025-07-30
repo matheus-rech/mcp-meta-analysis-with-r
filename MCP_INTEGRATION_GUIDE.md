@@ -24,7 +24,7 @@ This guide shows how to integrate the MCP Meta-Analysis Server with various MCP 
     "meta-analysis": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/Users/matheusrech/mcp-meta-analysis-with-r",
+      "cwd": "/path/to/your/mcp-meta-analysis-with-r",
       "env": {
         "NODE_ENV": "production"
       }
@@ -41,7 +41,7 @@ This guide shows how to integrate the MCP Meta-Analysis Server with various MCP 
     "meta-analysis": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/Users/matheusrech/mcp-meta-analysis-with-r"
+      "cwd": "/path/to/your/mcp-meta-analysis-with-r"
     }
   }
 }

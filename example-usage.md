@@ -16,7 +16,7 @@ Add this configuration to your Claude Desktop settings (`~/Library/Application S
     "meta-analysis": {
       "command": "node",
       "args": ["dist/index.js"],
-      "cwd": "/Users/matheusrech/mcp-meta-analysis-with-r"
+      "cwd": "/path/to/your/mcp-meta-analysis-with-r"
     }
   }
 }

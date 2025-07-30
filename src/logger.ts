@@ -1,4 +1,12 @@
 import winston from 'winston';
+import fs from 'fs';
+import path from 'path';
+
+// Ensure logs directory exists
+const logsDir = path.join(process.cwd(), 'logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir, { recursive: true });
+}
 
 export const logger = winston.createLogger({
   level: process.env.LOG_LEVEL || 'info',
@@ -10,11 +18,11 @@ export const logger = winston.createLogger({
   defaultMeta: { service: 'mcp-meta-analysis' },
   transports: [
     new winston.transports.File({ 
-      filename: 'logs/error.log', 
+      filename: path.join(logsDir, 'error.log'), 
       level: 'error' 
     }),
     new winston.transports.File({ 
-      filename: 'logs/combined.log' 
+      filename: path.join(logsDir, 'combined.log')
     })
   ]
 });

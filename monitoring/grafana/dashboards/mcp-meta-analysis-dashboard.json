@@ -1,0 +1,229 @@
+{
+  "dashboard": {
+    "id": null,
+    "title": "MCP Meta-Analysis Server Dashboard",
+    "tags": ["mcp", "meta-analysis", "statistics"],
+    "style": "dark",
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Server Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"mcp-meta-analysis-server\"}",
+            "legendFormat": "Server Status"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "options": {
+                  "0": {"text": "DOWN", "color": "red"},
+                  "1": {"text": "UP", "color": "green"}
+                },
+                "type": "value"
+              }
+            ]
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 0, "y": 0}
+      },
+      {
+        "id": 2,
+        "title": "Active Sessions",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "meta_analysis_sessions_active_total",
+            "legendFormat": "Active Sessions"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 6, "x": 6, "y": 0}
+      },
+      {
+        "id": 3,
+        "title": "Analyses Completed (5m rate)",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "meta_analysis:analyses_completed:rate5m",
+            "legendFormat": "Completed/5m"
+          }
+        ],
+        "gridPos": {"h": 8, "w": 6, "x": 12, "y": 0}
+      },
+      {
+        "id": 4,
+        "title": "Error Rate",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "meta_analysis:error_rate:rate5m * 100",
+            "legendFormat": "Error Rate %"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "unit": "percent",
+            "thresholds": {
+              "steps": [
+                {"color": "green", "value": null},
+                {"color": "yellow", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            }
+          }
+        },
+        "gridPos": {"h": 8, "w": 6, "x": 18, "y": 0}
+      },
+      {
+        "id": 5,
+        "title": "Request Rate",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(meta_analysis_requests_total[5m])",
+            "legendFormat": "Requests/sec"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Requests/sec",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 8}
+      },
+      {
+        "id": 6,
+        "title": "Average Analysis Duration",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "meta_analysis:analysis_duration:avg5m",
+            "legendFormat": "Avg Duration (s)"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Seconds",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 8}
+      },
+      {
+        "id": 7,
+        "title": "Memory Usage",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "process_resident_memory_bytes{job=\"mcp-meta-analysis-server\"} / 1024 / 1024",
+            "legendFormat": "Memory (MB)"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "MB",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 9, "w": 12, "x": 0, "y": 17}
+      },
+      {
+        "id": 8,
+        "title": "Studies Processed",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "meta_analysis:studies_processed:rate1m",
+            "legendFormat": "Studies/min"
+          }
+        ],
+        "yAxes": [
+          {
+            "label": "Studies/min",
+            "min": 0
+          }
+        ],
+        "gridPos": {"h": 9, "w": 12, "x": 12, "y": 17}
+      },
+      {
+        "id": 9,
+        "title": "Analysis Types Distribution",
+        "type": "piechart",
+        "targets": [
+          {
+            "expr": "sum by (effect_measure) (meta_analysis_analyses_by_type_total)",
+            "legendFormat": "{{effect_measure}}"
+          }
+        ],
+        "gridPos": {"h": 9, "w": 8, "x": 0, "y": 26}
+      },
+      {
+        "id": 10,
+        "title": "Redis Connection Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=\"redis\"}",
+            "legendFormat": "Redis Status"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              {
+                "options": {
+                  "0": {"text": "DOWN", "color": "red"},
+                  "1": {"text": "UP", "color": "green"}
+                },
+                "type": "value"
+              }
+            ]
+          }
+        },
+        "gridPos": {"h": 9, "w": 8, "x": 8, "y": 26}
+      },
+      {
+        "id": 11,
+        "title": "Top Error Messages",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "topk(5, sum by (error_type) (meta_analysis_errors_total))",
+            "legendFormat": "{{error_type}}"
+          }
+        ],
+        "gridPos": {"h": 9, "w": 8, "x": 16, "y": 26}
+      }
+    ],
+    "time": {
+      "from": "now-1h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "templating": {
+      "list": []
+    },
+    "annotations": {
+      "list": [
+        {
+          "name": "Annotations & Alerts",
+          "datasource": "Prometheus",
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "refresh": "5s",
+    "schemaVersion": 30,
+    "version": 1,
+    "links": []
+  }
+}

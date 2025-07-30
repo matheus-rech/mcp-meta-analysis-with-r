@@ -8,8 +8,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Install dependencies
-RUN npm ci --only=production
+# Install all dependencies (including dev deps for build)
+RUN npm ci
 
 # Copy source code
 COPY src/ ./src/
@@ -41,8 +41,14 @@ RUN R -e "install.packages(c( \
 # Stage 3: Production Runtime
 FROM rocker/r-ver:4.3.2
 
+# Install system dependencies including curl
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install Node.js
 RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get update && \
     apt-get install -y nodejs && \
     rm -rf /var/lib/apt/lists/*
 
@@ -51,8 +57,11 @@ COPY --from=r-environment /usr/local/lib/R /usr/local/lib/R
 
 # Copy Node.js application from node-builder stage
 COPY --from=node-builder /app/dist /app/dist
-COPY --from=node-builder /app/node_modules /app/node_modules
-COPY --from=node-builder /app/package.json /app/package.json
+COPY --from=node-builder /app/package*.json /app/
+
+# Install only production dependencies in final stage
+WORKDIR /app
+RUN npm ci --omit=dev
 
 # Copy R scripts
 COPY r_scripts/ /app/r_scripts/

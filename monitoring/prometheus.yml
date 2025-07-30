@@ -1,0 +1,161 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'mcp-meta-analysis'
+
+rule_files:
+  # - "alert.rules.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - alertmanager:9093
+
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # MCP Meta-Analysis Server
+  - job_name: 'mcp-meta-analysis-server'
+    static_configs:
+      - targets: ['meta-analysis-server:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+  # Redis monitoring
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis:6379']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Nginx monitoring
+  - job_name: 'nginx'
+    static_configs:
+      - targets: ['nginx:80']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+
+  # Node.js application metrics (if available)
+  - job_name: 'nodejs-app'
+    static_configs:
+      - targets: ['meta-analysis-server:3000']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+
+  # System metrics (if node-exporter is added)
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 30s
+
+# Recording rules for meta-analysis specific metrics
+recording_rules:
+  - name: meta_analysis_rules
+    rules:
+    # Active sessions rate
+    - record: meta_analysis:active_sessions:rate5m
+      expr: rate(meta_analysis_sessions_active_total[5m])
+    
+    # Analysis completion rate
+    - record: meta_analysis:analyses_completed:rate5m
+      expr: rate(meta_analysis_analyses_completed_total[5m])
+    
+    # Average analysis duration
+    - record: meta_analysis:analysis_duration:avg5m
+      expr: rate(meta_analysis_analysis_duration_seconds_sum[5m]) / rate(meta_analysis_analysis_duration_seconds_count[5m])
+    
+    # Error rate
+    - record: meta_analysis:error_rate:rate5m
+      expr: rate(meta_analysis_errors_total[5m]) / rate(meta_analysis_requests_total[5m])
+    
+    # Memory usage percentage
+    - record: meta_analysis:memory_usage:percent
+      expr: (process_resident_memory_bytes / process_virtual_memory_max_bytes) * 100
+    
+    # Studies processed per minute
+    - record: meta_analysis:studies_processed:rate1m
+      expr: rate(meta_analysis_studies_processed_total[1m])
+
+# Custom alert rules
+alert_rules:
+  - name: meta_analysis_alerts
+    rules:
+    # High error rate alert
+    - alert: HighErrorRate
+      expr: meta_analysis:error_rate:rate5m > 0.1
+      for: 5m
+      labels:
+        severity: warning
+        service: mcp-meta-analysis
+      annotations:
+        summary: "High error rate detected in meta-analysis server"
+        description: "Error rate is {{ $value | humanizePercentage }} over the last 5 minutes"
+        
+    # Server down alert
+    - alert: MCPServerDown
+      expr: up{job="mcp-meta-analysis-server"} == 0
+      for: 2m
+      labels:
+        severity: critical
+        service: mcp-meta-analysis
+      annotations:
+        summary: "MCP Meta-Analysis server is down"
+        description: "The MCP server has been down for more than 2 minutes"
+        
+    # High memory usage alert
+    - alert: HighMemoryUsage
+      expr: meta_analysis:memory_usage:percent > 90
+      for: 5m
+      labels:
+        severity: warning
+        service: mcp-meta-analysis
+      annotations:
+        summary: "High memory usage detected"
+        description: "Memory usage is {{ $value }}% of available memory"
+        
+    # Redis down alert
+    - alert: RedisDown
+      expr: up{job="redis"} == 0
+      for: 1m
+      labels:
+        severity: warning
+        service: redis
+      annotations:
+        summary: "Redis server is down"
+        description: "Redis has been down for more than 1 minute"
+        
+    # Long running analysis alert
+    - alert: LongRunningAnalysis
+      expr: meta_analysis:analysis_duration:avg5m > 300
+      for: 10m
+      labels:
+        severity: warning
+        service: mcp-meta-analysis
+      annotations:
+        summary: "Analyses taking too long to complete"
+        description: "Average analysis duration is {{ $value }}s over the last 5 minutes"
+        
+    # High request rate alert
+    - alert: HighRequestRate
+      expr: rate(meta_analysis_requests_total[5m]) > 100
+      for: 5m
+      labels:
+        severity: info
+        service: mcp-meta-analysis
+      annotations:
+        summary: "High request rate detected"
+        description: "Request rate is {{ $value }} requests/second over the last 5 minutes"
+
+# Storage configuration
+storage:
+  tsdb:
+    path: /prometheus
+    retention:
+      time: 30d
+      size: 10GB

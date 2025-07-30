@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs-extra';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { MetaAnalysisSession, AnalysisParameters, StudyData } from './types.js';
 import { logger } from './logger.js';
 
@@ -8,9 +9,15 @@ export class SessionManager {
   private sessions: Map<string, MetaAnalysisSession> = new Map();
   private readonly sessionsDir: string;
 
-  constructor(baseDir = './user_sessions') {
-    this.sessionsDir = baseDir;
-    this.ensureDirectories();
+  constructor(baseDir?: string) {
+    // Use absolute path relative to project root
+    const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+    this.sessionsDir = baseDir || path.join(projectRoot, 'user_sessions');
+    
+    // Create directories synchronously to avoid async issues in constructor
+    fs.ensureDirSync(this.sessionsDir);
+    fs.ensureDirSync(path.join(this.sessionsDir, 'templates'));
+    fs.ensureDirSync(path.join(this.sessionsDir, 'shared_resources'));
   }
 
   private async ensureDirectories(): Promise<void> {

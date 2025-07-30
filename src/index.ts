@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+console.error('Starting MCP Meta-Analysis Server - importing modules...');
+
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
@@ -30,6 +32,7 @@ class MetaAnalysisMCPServer {
   private dataValidator: DataValidator;
 
   constructor() {
+    logger.info('Initializing MetaAnalysisMCPServer');
     this.server = new Server(
       {
         name: 'mcp-meta-analysis-server',
@@ -42,9 +45,25 @@ class MetaAnalysisMCPServer {
       }
     );
 
-    this.sessionManager = new SessionManager();
-    this.rExecutor = new RExecutor();
-    this.dataValidator = new DataValidator();
+    logger.info('Creating session manager, R executor, and data validator');
+    try {
+      logger.info('Initializing SessionManager...');
+      this.sessionManager = new SessionManager();
+      logger.info('SessionManager initialized');
+      
+      logger.info('Initializing RExecutor...');
+      this.rExecutor = new RExecutor();
+      logger.info('RExecutor initialized');
+      
+      logger.info('Initializing DataValidator...');
+      this.dataValidator = new DataValidator();
+      logger.info('DataValidator initialized');
+      
+      logger.info('All components initialized successfully');
+    } catch (error) {
+      logger.error('Error initializing components:', error);
+      throw error;
+    }
 
     this.setupToolHandlers();
     this.setupErrorHandling();
@@ -52,196 +71,204 @@ class MetaAnalysisMCPServer {
 
   private setupToolHandlers(): void {
     this.server.setRequestHandler(ListToolsRequestSchema, async () => {
-      return {
-        tools: [
-          {
-            name: 'initialize_meta_analysis',
-            description: 'Start a new meta-analysis project with guided setup',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                project_name: {
-                  type: 'string',
-                  description: 'Name for the meta-analysis project'
-                },
-                study_type: {
-                  type: 'string',
-                  enum: ['clinical_trial', 'observational', 'diagnostic'],
-                  description: 'Type of studies to be included'
-                },
-                effect_measure: {
-                  type: 'string',
-                  enum: ['OR', 'RR', 'MD', 'SMD', 'HR'],
-                  description: 'Effect measure for the analysis'
-                },
-                analysis_model: {
-                  type: 'string',
-                  enum: ['fixed', 'random', 'auto'],
-                  description: 'Statistical model to use'
-                }
-              },
-              required: ['project_name', 'study_type', 'effect_measure']
-            }
-          },
-          {
-            name: 'upload_study_data',
-            description: 'Upload and validate study data from various formats',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                session_id: {
-                  type: 'string',
-                  description: 'Session ID from initialize_meta_analysis'
-                },
-                data_format: {
-                  type: 'string',
-                  enum: ['csv', 'excel', 'revman'],
-                  description: 'Format of the uploaded data'
-                },
-                data_content: {
-                  type: 'string',
-                  description: 'Base64 encoded data content or CSV text'
-                },
-                validation_level: {
-                  type: 'string',
-                  enum: ['basic', 'comprehensive'],
-                  description: 'Level of validation to perform'
-                }
-              },
-              required: ['session_id', 'data_format', 'data_content']
-            }
-          },
-          {
-            name: 'perform_meta_analysis',
-            description: 'Execute meta-analysis with automated statistical checks',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                session_id: {
-                  type: 'string',
-                  description: 'Session ID'
-                },
-                heterogeneity_test: {
-                  type: 'boolean',
-                  description: 'Include heterogeneity assessment'
-                },
-                publication_bias: {
-                  type: 'boolean',
-                  description: 'Include publication bias tests'
-                },
-                sensitivity_analysis: {
-                  type: 'boolean',
-                  description: 'Perform sensitivity analysis'
-                }
-              },
-              required: ['session_id']
-            }
-          },
-          {
-            name: 'generate_forest_plot',
-            description: 'Create publication-ready forest plot',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                session_id: {
-                  type: 'string',
-                  description: 'Session ID'
-                },
-                plot_style: {
-                  type: 'string',
-                  enum: ['classic', 'modern', 'journal_specific'],
-                  description: 'Visual style for the plot'
-                },
-                confidence_level: {
-                  type: 'number',
-                  description: 'Confidence level (0.5-0.99)'
-                },
-                custom_labels: {
-                  type: 'object',
-                  description: 'Custom labels for the plot'
-                }
-              },
-              required: ['session_id']
-            }
-          },
-          {
-            name: 'assess_publication_bias',
-            description: 'Perform comprehensive publication bias assessment',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                session_id: {
-                  type: 'string',
-                  description: 'Session ID'
-                },
-                methods: {
-                  type: 'array',
-                  items: {
+      try {
+        logger.info('Received tools/list request');
+        const toolsList = {
+          tools: [
+            {
+              name: 'initialize_meta_analysis',
+              description: 'Start a new meta-analysis project with guided setup',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  project_name: {
                     type: 'string',
-                    enum: ['funnel_plot', 'egger_test', 'begg_test', 'trim_fill']
+                    description: 'Name for the meta-analysis project'
                   },
-                  description: 'Publication bias assessment methods'
-                }
-              },
-              required: ['session_id']
-            }
-          },
-          {
-            name: 'generate_report',
-            description: 'Create comprehensive meta-analysis report',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                session_id: {
-                  type: 'string',
-                  description: 'Session ID'
+                  study_type: {
+                    type: 'string',
+                    enum: ['clinical_trial', 'observational', 'diagnostic'],
+                    description: 'Type of studies to be included'
+                  },
+                  effect_measure: {
+                    type: 'string',
+                    enum: ['OR', 'RR', 'MD', 'SMD', 'HR'],
+                    description: 'Effect measure for the analysis'
+                  },
+                  analysis_model: {
+                    type: 'string',
+                    enum: ['fixed', 'random', 'auto'],
+                    description: 'Statistical model to use'
+                  }
                 },
-                format: {
-                  type: 'string',
-                  enum: ['html', 'pdf', 'word'],
-                  description: 'Output format for the report'
+                required: ['project_name', 'study_type', 'effect_measure']
+              }
+            },
+            {
+              name: 'upload_study_data',
+              description: 'Upload and validate study data from various formats',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  session_id: {
+                    type: 'string',
+                    description: 'Session ID from initialize_meta_analysis'
+                  },
+                  data_format: {
+                    type: 'string',
+                    enum: ['csv', 'excel', 'revman'],
+                    description: 'Format of the uploaded data'
+                  },
+                  data_content: {
+                    type: 'string',
+                    description: 'Base64 encoded data content or CSV text'
+                  },
+                  validation_level: {
+                    type: 'string',
+                    enum: ['basic', 'comprehensive'],
+                    description: 'Level of validation to perform'
+                  }
                 },
-                include_code: {
-                  type: 'boolean',
-                  description: 'Include R code in the report'
+                required: ['session_id', 'data_format', 'data_content']
+              }
+            },
+            {
+              name: 'perform_meta_analysis',
+              description: 'Execute meta-analysis with automated statistical checks',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  session_id: {
+                    type: 'string',
+                    description: 'Session ID'
+                  },
+                  heterogeneity_test: {
+                    type: 'boolean',
+                    description: 'Include heterogeneity assessment'
+                  },
+                  publication_bias: {
+                    type: 'boolean',
+                    description: 'Include publication bias tests'
+                  },
+                  sensitivity_analysis: {
+                    type: 'boolean',
+                    description: 'Perform sensitivity analysis'
+                  }
                 },
-                journal_template: {
-                  type: 'string',
-                  description: 'Journal-specific template to use'
-                }
-              },
-              required: ['session_id']
-            }
-          },
-          {
-            name: 'list_sessions',
-            description: 'List all active meta-analysis sessions',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                user_id: {
-                  type: 'string',
-                  description: 'Filter by user ID (optional)'
+                required: ['session_id']
+              }
+            },
+            {
+              name: 'generate_forest_plot',
+              description: 'Create publication-ready forest plot',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  session_id: {
+                    type: 'string',
+                    description: 'Session ID'
+                  },
+                  plot_style: {
+                    type: 'string',
+                    enum: ['classic', 'modern', 'journal_specific'],
+                    description: 'Visual style for the plot'
+                  },
+                  confidence_level: {
+                    type: 'number',
+                    description: 'Confidence level (0.5-0.99)'
+                  },
+                  custom_labels: {
+                    type: 'object',
+                    description: 'Custom labels for the plot'
+                  }
+                },
+                required: ['session_id']
+              }
+            },
+            {
+              name: 'assess_publication_bias',
+              description: 'Perform comprehensive publication bias assessment',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  session_id: {
+                    type: 'string',
+                    description: 'Session ID'
+                  },
+                  methods: {
+                    type: 'array',
+                    items: {
+                      type: 'string',
+                      enum: ['funnel_plot', 'egger_test', 'begg_test', 'trim_fill']
+                    },
+                    description: 'Publication bias assessment methods'
+                  }
+                },
+                required: ['session_id']
+              }
+            },
+            {
+              name: 'generate_report',
+              description: 'Create comprehensive meta-analysis report',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  session_id: {
+                    type: 'string',
+                    description: 'Session ID'
+                  },
+                  format: {
+                    type: 'string',
+                    enum: ['html', 'pdf', 'word'],
+                    description: 'Output format for the report'
+                  },
+                  include_code: {
+                    type: 'boolean',
+                    description: 'Include R code in the report'
+                  },
+                  journal_template: {
+                    type: 'string',
+                    description: 'Journal-specific template to use'
+                  }
+                },
+                required: ['session_id']
+              }
+            },
+            {
+              name: 'list_sessions',
+              description: 'List all active meta-analysis sessions',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  user_id: {
+                    type: 'string',
+                    description: 'Filter by user ID (optional)'
+                  }
                 }
               }
+            },
+            {
+              name: 'get_session_status',
+              description: 'Get detailed status of a meta-analysis session',
+              inputSchema: {
+                type: 'object',
+                properties: {
+                  session_id: {
+                    type: 'string',
+                    description: 'Session ID to check'
+                  }
+                },
+                required: ['session_id']
+              }
             }
-          },
-          {
-            name: 'get_session_status',
-            description: 'Get detailed status of a meta-analysis session',
-            inputSchema: {
-              type: 'object',
-              properties: {
-                session_id: {
-                  type: 'string',
-                  description: 'Session ID to check'
-                }
-              },
-              required: ['session_id']
-            }
-          }
-        ] as Tool[]
-      };
+          ] as Tool[]
+        };
+        logger.info('Sending tools/list response with', toolsList.tools.length, 'tools');
+        return toolsList;
+      } catch (error) {
+        logger.error('Error in tools/list handler:', error);
+        throw error;
+      }
     });
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -742,12 +769,29 @@ ${session.files.generated.length > 0 ? `\n**Generated Files:**\n${session.files.
     const transport = new StdioServerTransport();
     await this.server.connect(transport);
     logger.info('MCP Meta-Analysis Server started successfully');
+    
+    // Keep the process alive
+    process.stdin.resume();
+    
+    // Handle process termination gracefully
+    process.on('SIGINT', () => {
+      logger.info('Received SIGINT, shutting down gracefully');
+      process.exit(0);
+    });
+    
+    process.on('SIGTERM', () => {
+      logger.info('Received SIGTERM, shutting down gracefully');
+      process.exit(0);
+    });
   }
 }
 
 // Start the server
+console.error('Creating MetaAnalysisMCPServer instance...');
 const server = new MetaAnalysisMCPServer();
+console.error('Running server...');
 server.run().catch((error) => {
+  console.error('Failed to start server:', error);
   logger.error('Failed to start server:', error);
   process.exit(1);
 });

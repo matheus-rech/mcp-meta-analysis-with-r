@@ -1,0 +1,41 @@
+name: meta-analysis
+display_name: Meta-Analysis Server
+description: Professional MCP server for conducting meta-analyses with automated statistical validation, containerized R environments, and publication-ready outputs
+icon: 📊
+github_repo: https://github.com/matheusrech/mcp-meta-analysis-with-r
+dockerfile: Dockerfile.production
+env:
+  - name: NODE_ENV
+    description: Node environment (production/development)
+    default: production
+  - name: LOG_LEVEL
+    description: Logging level (info/debug/error)
+    default: info
+  - name: R_LIBS_USER
+    description: R packages directory
+    default: /usr/local/lib/R/site-library
+secrets: []
+categories:
+  - data-science
+  - statistics
+  - research
+  - healthcare
+features:
+  - Meta-analysis with automated statistical validation
+  - Support for multiple effect measures (OR, RR, MD, SMD, HR)
+  - Forest plots and funnel plots generation
+  - Publication bias assessment (Egger's test, Begg's test, trim-and-fill)
+  - Heterogeneity analysis (I², Q-test, τ²)
+  - Support for CSV, Excel, and RevMan data formats
+  - Comprehensive HTML/PDF/Word report generation
+  - Session-based workflow management
+  - Containerized R environment with essential packages
+tools:
+  - initialize_meta_analysis
+  - upload_study_data
+  - perform_meta_analysis
+  - generate_forest_plot
+  - assess_publication_bias
+  - generate_report
+  - list_sessions
+  - get_session_status

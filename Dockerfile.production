@@ -35,8 +35,14 @@ RUN apt-get update && apt-get install -y \
 
 # Install core R packages with cache
 RUN R -e "install.packages(c( \
-    'meta', 'metafor', 'dplyr', 'jsonlite', 'ggplot2' \
-    ), dependencies = TRUE, Ncpus = parallel::detectCores())"
+    'meta', \
+    'metafor', \
+    'dplyr', \
+    'jsonlite', \
+    'ggplot2', \
+    'rmarkdown', \
+    'knitr' \
+    ), repos = 'https://cloud.r-project.org/', dependencies = TRUE, Ncpus = parallel::detectCores())"
 
 # Stage 3: Production Runtime
 FROM rocker/r-ver:4.3.2

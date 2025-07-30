@@ -1,24 +1,36 @@
 # MCP Meta-Analysis Server
 
-A comprehensive Model Context Protocol (MCP) server for guided meta-analysis workflows with containerized R environments.
+A Model Context Protocol (MCP) server that democratizes meta-analysis through guided workflows, automated statistical validation, and seamless R integration.
 
 ## Features
 
-- **Guided Workflow**: Step-by-step meta-analysis process
-- **Multiple Effect Measures**: OR, RR, MD, SMD, HR
-- **Statistical Validation**: Automated data validation and quality checks
-- **Publication Bias Assessment**: Funnel plots, Egger's test, Begg's test, trim-and-fill
-- **Visualization**: Forest plots and funnel plots
-- **Comprehensive Reporting**: HTML, PDF, Word formats
-- **Containerized R Environment**: Isolated and reproducible analysis
+- 🎯 **Guided Workflows**: Step-by-step meta-analysis process
+- 🔍 **Automated Validation**: Statistical checks and data quality assessment
+- 📊 **Publication-Ready Visualizations**: Forest plots, funnel plots, and more
+- 🔬 **Statistical Rigor**: Support for multiple effect measures (OR, RR, MD, SMD, HR)
+- 📝 **Comprehensive Reporting**: HTML/PDF/Word reports with reproducible code
+- 🐳 **Flexible Deployment**: Works with local R or Docker containers
 
 ## Quick Start
 
 ### Prerequisites
 
-- Node.js 18+
-- Docker
-- TypeScript
+Choose one of the following:
+
+#### Option 1: Local R Installation (Quick Start)
+```bash
+# Check if R is installed
+R --version
+
+# Install required R packages (if needed)
+Rscript install-r-packages.R
+```
+
+#### Option 2: Docker (Production)
+```bash
+# Build the Docker image
+docker build -f Dockerfile.production -t mcp-meta-analysis-r:latest .
+```
 
 ### Installation
 
@@ -29,18 +41,15 @@ npm install
 # Build the project
 npm run build
 
-# Build Docker container for R environment
-npm run docker:build
-
-# Start the MCP server
-npm start
+# Start the MCP server (uses local R by default)
+USE_DOCKER=false npm start
 ```
 
-### Usage
+### Usage in Claude Desktop
 
-The server provides 8 main MCP tools:
+The server is already configured in Claude Desktop. The server provides these MCP tools:
 
-1. **initialize_meta_analysis** - Start new project
+1. **initialize_meta_analysis** - Start new project with guided setup
 2. **upload_study_data** - Upload and validate data (CSV/Excel/RevMan)
 3. **perform_meta_analysis** - Execute statistical analysis
 4. **generate_forest_plot** - Create publication-ready forest plots
@@ -97,10 +106,21 @@ npm run lint
 ## Docker Environment
 
 The R environment includes:
-- meta, metafor, metaSEM packages
-- ggplot2, forestplot for visualization
+- meta, metafor packages for meta-analysis
+- ggplot2 for visualization
 - knitr, rmarkdown for reporting
-- Data manipulation packages (dplyr, readxl)
+- Data manipulation packages (dplyr, jsonlite)
+
+## Troubleshooting
+
+### "Meta-analysis requires either Docker or R to be installed"
+Install R from https://www.r-project.org/ or build the Docker image.
+
+### "Cannot load R package 'meta'"
+Run `Rscript install-r-packages.R` to install required packages.
+
+### Server disconnects from Claude Desktop
+Check logs in `logs/mcp-meta-analysis.log` for errors.
 
 ## License
 

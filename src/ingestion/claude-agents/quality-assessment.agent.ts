@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { BaseClaudeCodeAgent } from '../../linting/base-claude-code.agent.js';
 import { logger } from '../../logger.js';
 import { StudyData } from '../../types.js';
 
@@ -8,19 +8,20 @@ export interface QualityAssessmentAgentConfig {
   assessmentTool?: 'cochrane' | 'newcastle-ottawa' | 'jadad' | 'custom';
 }
 
-export class QualityAssessmentAgent {
-  private claude: Anthropic;
-  private model: string;
+export class QualityAssessmentAgent extends BaseClaudeCodeAgent {
   private assessmentTool: string;
 
   constructor(config: QualityAssessmentAgentConfig) {
-    this.claude = new Anthropic({ apiKey: config.apiKey });
-    this.model = config.model || 'claude-3-opus-20240229';
+    super({
+      apiKey: config.apiKey,
+      model: config.model,
+      maxTurns: 1
+    });
     this.assessmentTool = config.assessmentTool || 'cochrane';
   }
 
   /**
-   * Assess study quality based on available information
+   * Assess study quality based on available information using Claude Code SDK
    */
   async assessStudyQuality(studies: StudyData[]): Promise<{
     assessments: Array<{
@@ -48,128 +49,108 @@ export class QualityAssessmentAgent {
     };
   }> {
     const prompt = this.buildQualityAssessmentPrompt(studies);
-
-    const response = await this.claude.messages.create({
-      model: this.model,
-      max_tokens: 4000,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }],
-      system: this.getQualitySystemPrompt()
-    });
-
-    return this.parseQualityAssessment(response);
+    const messages = await this.executeQuery(prompt);
+    
+    return this.parseJsonResponse(messages) || {
+      assessments: [],
+      summary: {
+        high_quality_count: 0,
+        moderate_quality_count: 0,
+        low_quality_count: 0,
+        main_concerns: [],
+        recommendations: []
+      }
+    };
   }
 
   /**
-   * Generate GRADE assessment for evidence quality
+   * Generate GRADE evidence profile
    */
-  async performGRADEAssessment(
+  async generateGRADEProfile(
     studies: StudyData[],
-    metaAnalysisResults: any
+    outcome: string
   ): Promise<{
     certainty: 'high' | 'moderate' | 'low' | 'very_low';
-    factors: {
-      risk_of_bias: { rating: string; explanation: string };
-      inconsistency: { rating: string; explanation: string };
-      indirectness: { rating: string; explanation: string };
-      imprecision: { rating: string; explanation: string };
-      publication_bias: { rating: string; explanation: string };
-    };
-    upgrading_factors: Array<{
-      factor: string;
-      present: boolean;
-      explanation: string;
-    }>;
+    reasons_for_downgrading: string[];
+    reasons_for_upgrading: string[];
     summary_of_findings: string;
-    clinical_implications: string;
   }> {
     const prompt = `
-Perform a GRADE assessment for this meta-analysis:
+Generate a GRADE evidence profile for this meta-analysis:
 
-Studies: ${JSON.stringify(studies, null, 2)}
-Results: ${JSON.stringify(metaAnalysisResults, null, 2)}
+Outcome: ${outcome}
+Number of studies: ${studies.length}
+Total participants: ${studies.reduce((sum, s) => sum + (s.n_treatment || 0) + (s.n_control || 0), 0)}
+
+Study data (first 5):
+${JSON.stringify(studies.slice(0, 5), null, 2)}
 
 Assess:
 1. Risk of bias across studies
 2. Inconsistency (heterogeneity)
-3. Indirectness of evidence
-4. Imprecision of results
+3. Indirectness
+4. Imprecision
 5. Publication bias
 
-Consider upgrading factors:
-- Large effect size
-- Dose-response gradient
-- Plausible confounding
-
-Provide overall certainty rating with detailed explanations.
+Return JSON with certainty level and detailed reasons.
 `;
 
-    const response = await this.claude.messages.create({
-      model: this.model,
-      max_tokens: 3000,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }],
-      system: 'You are a GRADE methodology expert. Provide systematic, evidence-based assessments.'
-    });
-
-    return this.parseGRADEAssessment(response);
+    const messages = await this.executeQuery(prompt);
+    return this.parseJsonResponse(messages) || {
+      certainty: 'moderate',
+      reasons_for_downgrading: [],
+      reasons_for_upgrading: [],
+      summary_of_findings: 'Unable to generate GRADE profile'
+    };
   }
 
   /**
-   * Identify potential sources of bias
+   * Detect potential publication bias indicators
    */
-  async identifyBiasSources(studies: StudyData[]): Promise<{
-    bias_analysis: Array<{
-      type: string;
-      severity: 'low' | 'moderate' | 'high';
-      affected_studies: string[];
-      impact_on_results: string;
-      mitigation_strategies: string[];
-    }>;
-    overall_bias_risk: 'low' | 'moderate' | 'high';
-    key_recommendations: string[];
+  async assessPublicationBias(studies: StudyData[]): Promise<{
+    likelihood: 'low' | 'moderate' | 'high';
+    indicators: string[];
+    recommendations: string[];
+    funnel_plot_asymmetry: boolean;
   }> {
     const prompt = `
-Analyze potential sources of bias in these studies:
+Assess publication bias risk for this meta-analysis:
 
-${JSON.stringify(studies, null, 2)}
+Number of studies: ${studies.length}
+Study sizes: ${JSON.stringify(studies.map(s => ({
+  name: s.study_name,
+  total_n: (s.n_treatment || 0) + (s.n_control || 0),
+  effect_size: s.effect_size
+})), null, 2)}
 
-Identify:
-1. Selection bias indicators
-2. Performance/detection bias risks
-3. Attrition bias patterns
-4. Reporting bias signals
-5. Other sources of bias
+Check for:
+1. Small study effects
+2. Missing negative studies
+3. Industry funding patterns
+4. Geographic bias
+5. Language bias indicators
 
-For each bias type, assess severity and impact on meta-analysis results.
+Return JSON assessment of publication bias risk.
 `;
 
-    const response = await this.claude.messages.create({
-      model: this.model,
-      max_tokens: 2500,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }]
-    });
-
-    return this.parseBiasAnalysis(response);
+    const messages = await this.executeQuery(prompt);
+    return this.parseJsonResponse(messages) || {
+      likelihood: 'moderate',
+      indicators: [],
+      recommendations: ['Consider funnel plot analysis'],
+      funnel_plot_asymmetry: false
+    };
   }
 
   private buildQualityAssessmentPrompt(studies: StudyData[]): string {
-    const toolSpecificInstructions = {
-      'cochrane': `Use Cochrane Risk of Bias tool criteria:
-- Random sequence generation
-- Allocation concealment
-- Blinding of participants and personnel
-- Blinding of outcome assessment
-- Incomplete outcome data
-- Selective reporting
-- Other sources of bias`,
+    const toolInstructions = {
+      'cochrane': `Use Cochrane Risk of Bias tool domains:
+- Selection bias (random sequence, allocation concealment)
+- Performance bias (blinding of participants/personnel)
+- Detection bias (blinding of outcome assessment)
+- Attrition bias (incomplete outcome data)
+- Reporting bias (selective reporting)
+- Other bias`,
       'newcastle-ottawa': `Use Newcastle-Ottawa Scale for observational studies:
 - Selection (4 items)
 - Comparability (2 items)
@@ -177,73 +158,41 @@ For each bias type, assess severity and impact on meta-analysis results.
       'jadad': `Use Jadad scale focusing on:
 - Randomization (0-2 points)
 - Blinding (0-2 points)
-- Withdrawals and dropouts (0-1 point)`,
-      'custom': `Assess based on general quality indicators:
-- Study design appropriateness
-- Sample size adequacy
-- Statistical methods
-- Outcome measurement
-- Follow-up completeness`
+- Withdrawals/dropouts (0-1 point)`,
+      'custom': `Perform comprehensive quality assessment considering all relevant factors`
     };
 
     return `
-Assess the quality of these studies using ${this.assessmentTool} criteria:
+Assess the quality of these studies using the ${this.assessmentTool} tool:
 
 ${JSON.stringify(studies, null, 2)}
 
-${toolSpecificInstructions[this.assessmentTool as keyof typeof toolSpecificInstructions] || toolSpecificInstructions['custom']}
+${toolInstructions[this.assessmentTool as keyof typeof toolInstructions] || toolInstructions.custom}
 
-For each study provide:
-- Quality score (0-10 scale)
-- Risk of bias assessment for each domain
-- Key strengths and limitations
-- Overall quality rating
+For each study, provide:
+1. Quality score (0-100)
+2. Risk of bias assessment
+3. Key strengths
+4. Main limitations
+5. Overall quality rating
 
-Also provide a summary of quality across all studies.
+Also provide a summary with counts and main recommendations.
+
+Return as structured JSON.
 `;
   }
 
-  private getQualitySystemPrompt(): string {
+  protected getSystemPrompt(): string {
     return `You are an expert in systematic review methodology and study quality assessment.
-Your role is to:
-1. Apply established quality assessment tools consistently
-2. Identify methodological strengths and weaknesses
-3. Assess risk of bias systematically
-4. Consider the impact of quality on meta-analysis results
-5. Provide actionable recommendations
+Your expertise includes:
+1. Cochrane Risk of Bias tools
+2. GRADE methodology
+3. Newcastle-Ottawa Scale
+4. PRISMA guidelines
+5. Publication bias detection
 
-Be objective and evidence-based in your assessments.`;
-  }
-
-  private parseQualityAssessment(response: any): any {
-    try {
-      const content = response.content[0].text;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No JSON quality assessment found');
-      }
-      return JSON.parse(jsonMatch[0]);
-    } catch (error) {
-      logger.error('Failed to parse quality assessment', { error });
-      throw error;
-    }
-  }
-
-  private parseGRADEAssessment(response: any): any {
-    const content = response.content[0].text;
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No GRADE assessment found');
-    }
-    return JSON.parse(jsonMatch[0]);
-  }
-
-  private parseBiasAnalysis(response: any): any {
-    const content = response.content[0].text;
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No bias analysis found');
-    }
-    return JSON.parse(jsonMatch[0]);
+Provide thorough, evidence-based quality assessments. Be critical but fair.
+Consider both reported and unreported potential biases.
+Always return structured JSON for easy parsing.`;
   }
 }

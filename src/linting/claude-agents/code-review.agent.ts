@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { BaseClaudeCodeAgent, ClaudeCodeAgentConfig } from '../base-claude-code.agent.js';
 import { logger } from '../../logger.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -7,9 +7,10 @@ import path from 'path';
 
 const execAsync = promisify(exec);
 
-export interface CodeReviewAgentConfig {
-  apiKey: string;
-  model?: string;
+// Re-export base agent for shared use
+export { BaseClaudeCodeAgent } from '../base-claude-code.agent.js';
+
+export interface CodeReviewAgentConfig extends ClaudeCodeAgentConfig {
   language: 'r' | 'python' | 'typescript';
   strictness?: 'low' | 'medium' | 'high';
 }
@@ -37,15 +38,16 @@ export interface LintResult {
   };
 }
 
-export class CodeReviewAgent {
-  private claude: Anthropic;
-  private model: string;
+export class CodeReviewAgent extends BaseClaudeCodeAgent {
   private language: string;
   private strictness: string;
 
   constructor(config: CodeReviewAgentConfig) {
-    this.claude = new Anthropic({ apiKey: config.apiKey });
-    this.model = config.model || 'claude-3-opus-20240229';
+    super({
+      apiKey: config.apiKey,
+      model: config.model,
+      maxTurns: config.maxTurns || 2 // Allow follow-up for code review
+    });
     this.language = config.language;
     this.strictness = config.strictness || 'medium';
   }
@@ -59,7 +61,7 @@ export class CodeReviewAgent {
     // Run traditional linter first
     const lintIssues = await this.runTraditionalLinter(filePath);
     
-    // Then enhance with Claude's analysis
+    // Then enhance with Claude Code SDK's analysis
     const aiAnalysis = await this.performAIAnalysis(fileContent, lintIssues, filePath);
     
     return {
@@ -262,7 +264,7 @@ cat(jsonlite::toJSON(list(
   }
 
   /**
-   * Enhance linting results with Claude AI analysis
+   * Enhance linting results with Claude Code SDK analysis
    */
   private async performAIAnalysis(
     code: string,
@@ -275,17 +277,13 @@ cat(jsonlite::toJSON(list(
   }> {
     const prompt = this.buildAnalysisPrompt(code, lintIssues, filePath);
     
-    const response = await this.claude.messages.create({
-      model: this.model,
-      max_tokens: 4000,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }],
-      system: this.getSystemPrompt()
-    });
-
-    return this.parseAIResponse(response);
+    const messages = await this.executeQuery(prompt);
+    
+    return this.parseJsonResponse(messages) || {
+      enhancedIssues: [],
+      suggestions: [],
+      metrics: {}
+    };
   }
 
   private buildAnalysisPrompt(code: string, lintIssues: any[], filePath: string): string {
@@ -325,7 +323,7 @@ Return a JSON response with enhancedIssues, suggestions, and metrics.
 `;
   }
 
-  private getSystemPrompt(): string {
+  protected getSystemPrompt(): string {
     const languageSpecific: Record<string, string> = {
       r: `You are an expert R programmer and statistician specializing in meta-analysis.
 Focus on:
@@ -378,23 +376,6 @@ Always return valid JSON.`;
     return merged.sort((a, b) => a.line - b.line);
   }
 
-  private parseAIResponse(response: any): any {
-    try {
-      const content = response.content[0].text;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No JSON found in response');
-      }
-      return JSON.parse(jsonMatch[0]);
-    } catch (error) {
-      logger.error('Failed to parse AI response', { error });
-      return {
-        enhancedIssues: [],
-        suggestions: [],
-        metrics: {}
-      };
-    }
-  }
 
   /**
    * Batch review multiple files

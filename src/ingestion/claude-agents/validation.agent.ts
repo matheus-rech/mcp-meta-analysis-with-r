@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { BaseClaudeCodeAgent } from '../../linting/base-claude-code.agent.js';
 import { logger } from '../../logger.js';
 import { StudyData, AnalysisParameters } from '../../types.js';
 
@@ -7,17 +7,17 @@ export interface ValidationAgentConfig {
   model?: string;
 }
 
-export class ValidationAgent {
-  private claude: Anthropic;
-  private model: string;
-
+export class ValidationAgent extends BaseClaudeCodeAgent {
   constructor(config: ValidationAgentConfig) {
-    this.claude = new Anthropic({ apiKey: config.apiKey });
-    this.model = config.model || 'claude-3-opus-20240229';
+    super({
+      apiKey: config.apiKey,
+      model: config.model,
+      maxTurns: 1 // Single-turn for validation
+    });
   }
 
   /**
-   * Comprehensive statistical validation using Claude's expertise
+   * Comprehensive statistical validation using Claude Code SDK
    */
   async validateStatisticalIntegrity(
     studies: StudyData[],
@@ -48,161 +48,141 @@ Check for:
 6. Sample size adequacy
 7. Data distribution issues
 
-Return a comprehensive validation report with:
+Return JSON with:
 - valid: boolean
-- issues: array of specific problems found
-- recommendations: array of actionable suggestions
+- issues: array of validation issues with severity
+- recommendations: array of statistical recommendations
 `;
 
-    const response = await this.claude.messages.create({
-      model: this.model,
-      max_tokens: 3000,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }],
-      system: this.getValidationSystemPrompt()
-    });
-
-    return this.parseValidationResponse(response);
+    const messages = await this.executeQuery(prompt);
+    return this.parseJsonResponse(messages) || {
+      valid: true,
+      issues: [],
+      recommendations: []
+    };
   }
 
   /**
-   * Detect optimal analysis approach based on data characteristics
+   * Validate individual study data quality
    */
-  async recommendAnalysisApproach(studies: StudyData[]): Promise<{
-    recommendedModel: 'fixed' | 'random';
-    effectMeasure: string;
-    reasoning: string;
-    additionalAnalyses: string[];
+  async validateStudyQuality(study: StudyData): Promise<{
+    qualityScore: number;
+    metrics: Record<string, number>;
+    concerns: string[];
   }> {
     const prompt = `
-Analyze these studies and recommend the best meta-analysis approach:
+Assess the quality of this individual study for meta-analysis:
 
-${JSON.stringify(studies, null, 2)}
+${JSON.stringify(study, null, 2)}
 
-Consider:
-1. Study heterogeneity
-2. Sample sizes
-3. Effect measure appropriateness
-4. Clinical diversity
-5. Methodological quality variation
+Evaluate:
+1. Completeness of data
+2. Internal consistency
+3. Statistical power
+4. Risk of bias indicators
+5. Generalizability
 
-Recommend:
-- Statistical model (fixed vs random effects)
-- Most appropriate effect measure
-- Additional analyses that would be valuable
-- Clear reasoning for recommendations
+Return JSON with:
+- qualityScore: 0-100
+- metrics: individual quality metrics
+- concerns: list of quality concerns
 `;
 
-    const response = await this.claude.messages.create({
-      model: this.model,
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }],
-      system: 'You are a meta-analysis methodology expert. Provide evidence-based recommendations.'
-    });
-
-    return this.parseRecommendations(response);
+    const messages = await this.executeQuery(prompt);
+    return this.parseJsonResponse(messages) || {
+      qualityScore: 50,
+      metrics: {},
+      concerns: []
+    };
   }
 
   /**
-   * Check for duplicate studies or overlapping data
+   * Check for duplicate studies using intelligent matching
    */
   async detectDuplicates(studies: StudyData[]): Promise<{
-    duplicates: Array<{
+    duplicateGroups: Array<{
       studies: string[];
       confidence: number;
       reason: string;
     }>;
-    suggestions: string[];
   }> {
     const prompt = `
-Check for duplicate or overlapping studies in this dataset:
+Detect potential duplicate studies in this dataset:
 
-${JSON.stringify(studies, null, 2)}
+${JSON.stringify(studies.map(s => ({
+  id: s.study_id,
+  name: s.study_name,
+  year: s.year,
+  n_total: (s.n_treatment || 0) + (s.n_control || 0)
+})), null, 2)}
 
 Look for:
-1. Same study reported multiple times
-2. Overlapping patient populations
-3. Multiple publications from same trial
-4. Subgroup data reported as separate studies
+1. Similar study names
+2. Identical sample sizes and years
+3. Overlapping author lists
+4. Substring matches in names
 
-Return duplicates with confidence scores and reasoning.
+Return JSON with duplicateGroups array, each containing:
+- studies: array of study IDs
+- confidence: 0-100
+- reason: explanation
 `;
 
-    const response = await this.claude.messages.create({
-      model: this.model,
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }]
-    });
-
-    return this.parseDuplicateCheck(response);
+    const messages = await this.executeQuery(prompt);
+    return this.parseJsonResponse(messages) || { duplicateGroups: [] };
   }
 
-  private getValidationSystemPrompt(): string {
-    return `You are a statistical validation expert specializing in meta-analysis. 
-Your role is to:
-1. Identify statistical errors and inconsistencies
-2. Check for methodological issues
-3. Ensure data quality standards
-4. Provide actionable recommendations
+  /**
+   * Validate analysis parameters and suggest improvements
+   */
+  async validateAnalysisApproach(
+    studies: StudyData[],
+    parameters: AnalysisParameters
+  ): Promise<{
+    appropriate: boolean;
+    suggestions: Array<{
+      parameter: string;
+      current: any;
+      suggested: any;
+      rationale: string;
+    }>;
+  }> {
+    const prompt = `
+Validate if the analysis approach is appropriate for the data:
+
+Studies summary:
+- Count: ${studies.length}
+- Outcome type: ${studies[0]?.events_treatment !== undefined ? 'binary' : 'continuous'}
+- Total participants: ${studies.reduce((sum, s) => sum + (s.n_treatment || 0) + (s.n_control || 0), 0)}
+
+Current parameters: ${JSON.stringify(parameters, null, 2)}
+
+Evaluate:
+1. Effect measure choice
+2. Model selection (fixed vs random)
+3. Heterogeneity methods
+4. Subgroup analysis feasibility
+
+Return JSON with:
+- appropriate: boolean
+- suggestions: array of parameter improvements
+`;
+
+    const messages = await this.executeQuery(prompt);
+    return this.parseJsonResponse(messages) || { 
+      appropriate: true, 
+      suggestions: [] 
+    };
+  }
+
+  protected getSystemPrompt(): string {
+    return `You are a statistical expert specializing in meta-analysis validation. Your role is to:
+1. Detect statistical errors and inconsistencies
+2. Identify data quality issues
+3. Suggest methodological improvements
+4. Ensure analysis validity
 5. Follow Cochrane and PRISMA guidelines
 
-Be thorough but practical. Focus on issues that materially affect results.`;
-  }
-
-  private parseValidationResponse(response: any): any {
-    try {
-      const content = response.content[0].text;
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) {
-        throw new Error('No JSON validation result found');
-      }
-      return JSON.parse(jsonMatch[0]);
-    } catch (error) {
-      logger.error('Failed to parse validation response', { error });
-      return {
-        valid: false,
-        issues: [{
-          severity: 'error',
-          message: 'Failed to parse validation results',
-          suggestion: 'Manual review required'
-        }],
-        recommendations: ['Perform manual data validation']
-      };
-    }
-  }
-
-  private parseRecommendations(response: any): any {
-    const content = response.content[0].text;
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      // Fallback to defaults
-      return {
-        recommendedModel: 'random',
-        effectMeasure: 'SMD',
-        reasoning: 'Default recommendation due to parsing error',
-        additionalAnalyses: ['sensitivity analysis', 'publication bias assessment']
-      };
-    }
-    return JSON.parse(jsonMatch[0]);
-  }
-
-  private parseDuplicateCheck(response: any): any {
-    const content = response.content[0].text;
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      return {
-        duplicates: [],
-        suggestions: ['Manual duplicate check recommended']
-      };
-    }
-    return JSON.parse(jsonMatch[0]);
+Always return valid JSON for parsing. Be thorough but practical in recommendations.`;
   }
 }

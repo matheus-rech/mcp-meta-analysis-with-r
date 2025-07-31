@@ -1,4 +1,4 @@
-import Anthropic from '@anthropic-ai/sdk';
+import { BaseClaudeCodeAgent } from '../../linting/base-claude-code.agent.js';
 import { logger } from '../../logger.js';
 import { StudyData, ValidationError } from '../../types.js';
 
@@ -8,43 +8,36 @@ export interface DataFormatterAgentConfig {
   maxRetries?: number;
 }
 
-export class DataFormatterAgent {
-  private claude: Anthropic;
-  private model: string;
+export class DataFormatterAgent extends BaseClaudeCodeAgent {
   private maxRetries: number;
 
   constructor(config: DataFormatterAgentConfig) {
-    this.claude = new Anthropic({ apiKey: config.apiKey });
-    this.model = config.model || 'claude-3-opus-20240229';
+    super({
+      apiKey: config.apiKey,
+      model: config.model,
+      maxTurns: 1 // Single-turn for data formatting
+    });
     this.maxRetries = config.maxRetries || 3;
   }
 
   /**
-   * Intelligently parse and format raw data using Claude
+   * Intelligently parse and format raw data using Claude Code SDK
    */
   async formatStudyData(rawData: string, format: string): Promise<StudyData[]> {
     const prompt = this.buildFormattingPrompt(rawData, format);
     
     try {
-      const response = await this.claude.messages.create({
-        model: this.model,
-        max_tokens: 4000,
-        messages: [{
-          role: 'user',
-          content: prompt
-        }],
-        system: this.getSystemPrompt()
-      });
-
-      const formattedData = this.parseClaudeResponse(response);
-      logger.info('Claude agent formatted data successfully', { 
+      const messages = await this.executeQuery(prompt);
+      const formattedData = this.parseFormattedData(messages);
+      
+      logger.info('Claude Code agent formatted data successfully', { 
         studyCount: formattedData.length 
       });
 
       return formattedData;
     } catch (error) {
-      logger.error('Claude agent formatting failed', { error });
-      throw new ValidationError('Failed to format data with Claude agent', { error });
+      logger.error('Claude Code agent formatting failed', { error });
+      throw new ValidationError('Failed to format data with Claude Code agent', { error });
     }
   }
 
@@ -72,17 +65,8 @@ Return a JSON with:
 - issues: array of detected issues with explanations
 `;
 
-    const response = await this.claude.messages.create({
-      model: this.model,
-      max_tokens: 4000,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }],
-      system: 'You are a statistical expert. Fix data issues while preserving study integrity.'
-    });
-
-    return this.parseFixedData(response);
+    const messages = await this.executeQuery(prompt);
+    return this.parseJsonResponse(messages) || { fixed: data, issues: [] };
   }
 
   /**
@@ -112,16 +96,8 @@ Required schema fields:
 Return a JSON mapping of column names to schema fields.
 `;
 
-    const response = await this.claude.messages.create({
-      model: this.model,
-      max_tokens: 1000,
-      messages: [{
-        role: 'user',
-        content: prompt
-      }]
-    });
-
-    return this.parseColumnMapping(response);
+    const messages = await this.executeQuery(prompt);
+    return this.parseJsonResponse(messages) || {};
   }
 
   private buildFormattingPrompt(rawData: string, format: string): string {
@@ -161,7 +137,7 @@ Return a JSON array of study objects following this schema:
 `;
   }
 
-  private getSystemPrompt(): string {
+  protected getSystemPrompt(): string {
     return `You are an expert in meta-analysis data processing. Your role is to:
 1. Parse various data formats (CSV, Excel, RevMan) accurately
 2. Calculate missing statistical values when possible
@@ -172,35 +148,19 @@ Return a JSON array of study objects following this schema:
 Always return valid JSON that can be parsed directly.`;
   }
 
-  private parseClaudeResponse(response: any): StudyData[] {
-    try {
-      const content = response.content[0].text;
-      const jsonMatch = content.match(/\[[\s\S]*\]/);
-      if (!jsonMatch) {
-        throw new Error('No JSON array found in response');
+  private parseFormattedData(messages: any[]): StudyData[] {
+    for (const message of messages) {
+      if (message.type === 'text' && message.content) {
+        try {
+          const jsonMatch = message.content.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+          }
+        } catch (error) {
+          logger.error('Failed to parse formatted data', { error });
+        }
       }
-      return JSON.parse(jsonMatch[0]);
-    } catch (error) {
-      logger.error('Failed to parse Claude response', { error });
-      throw new ValidationError('Invalid response format from Claude');
     }
-  }
-
-  private parseFixedData(response: any): any {
-    const content = response.content[0].text;
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON object found in response');
-    }
-    return JSON.parse(jsonMatch[0]);
-  }
-
-  private parseColumnMapping(response: any): Record<string, string> {
-    const content = response.content[0].text;
-    const jsonMatch = content.match(/\{[^}]*\}/);
-    if (!jsonMatch) {
-      throw new Error('No JSON mapping found in response');
-    }
-    return JSON.parse(jsonMatch[0]);
+    throw new ValidationError('Invalid response format from Claude Code');
   }
 }

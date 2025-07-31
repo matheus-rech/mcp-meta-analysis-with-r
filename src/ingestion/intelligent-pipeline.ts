@@ -22,9 +22,13 @@ export interface PipelineResult {
   validationReport: any;
   qualityReport?: any;
   recommendations: {
-    analysisModel: 'fixed' | 'random';
-    effectMeasure: string;
-    additionalAnalyses: string[];
+    appropriate: boolean;
+    suggestions: Array<{
+      parameter: string;
+      current: any;
+      suggested: any;
+      rationale: string;
+    }>;
   };
   processingSteps: Array<{
     step: string;
@@ -155,7 +159,7 @@ export class IntelligentIngestionPipeline extends EventEmitter {
         
         processingSteps.push({
           step: 'duplicate_detection',
-          status: duplicateCheck.duplicates.length > 0 ? 'warning' : 'success',
+          status: duplicateCheck.duplicateGroups.length > 0 ? 'warning' : 'success',
           duration: Date.now() - dupStart,
           details: duplicateCheck
         });
@@ -163,7 +167,7 @@ export class IntelligentIngestionPipeline extends EventEmitter {
         this.emit('pipeline:step', { 
           step: 'duplicate_check', 
           status: 'complete',
-          duplicatesFound: duplicateCheck.duplicates.length 
+          duplicatesFound: duplicateCheck.duplicateGroups.length 
         });
       }
 
@@ -171,7 +175,17 @@ export class IntelligentIngestionPipeline extends EventEmitter {
       const recStart = Date.now();
       logger.info('Getting analysis recommendations', { sessionId });
       
-      const recommendations = await this.validationAgent.recommendAnalysisApproach(studies);
+      const recommendations = await this.validationAgent.validateAnalysisApproach(
+        studies, 
+        { 
+          effect_measure: 'OR',
+          analysis_model: 'random',
+          confidence_level: 0.95,
+          heterogeneity_test: true,
+          publication_bias: true,
+          sensitivity_analysis: false
+        }
+      );
       
       processingSteps.push({
         step: 'recommendations',
@@ -183,7 +197,7 @@ export class IntelligentIngestionPipeline extends EventEmitter {
       this.emit('pipeline:step', { 
         step: 'recommendations', 
         status: 'complete',
-        model: recommendations.recommendedModel 
+        appropriate: recommendations.appropriate 
       });
 
       // Step 6: Quality Assessment (if enabled)
@@ -240,9 +254,8 @@ export class IntelligentIngestionPipeline extends EventEmitter {
         validationReport,
         qualityReport,
         recommendations: {
-          analysisModel: recommendations.recommendedModel,
-          effectMeasure: recommendations.effectMeasure,
-          additionalAnalyses: recommendations.additionalAnalyses
+          appropriate: recommendations.appropriate,
+          suggestions: recommendations.suggestions
         },
         processingSteps
       };

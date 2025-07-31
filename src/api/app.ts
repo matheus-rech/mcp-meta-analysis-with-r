@@ -125,7 +125,7 @@ export class APIGateway {
 
   private setupErrorHandling(): void {
     // Error handling middleware
-    this.app.use((err: Error, req: Request, res: Response, next: NextFunction) => {
+    this.app.use((err: Error, req: Request, res: Response, _next: NextFunction) => {
       const requestId = req.id;
       
       // Log error
@@ -201,11 +201,3 @@ export class APIGateway {
   }
 }
 
-// Extend Express Request type to include id
-declare global {
-  namespace Express {
-    interface Request {
-      id?: string;
-    }
-  }
-}

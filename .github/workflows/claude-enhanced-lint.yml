@@ -29,10 +29,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Install Claude CLI
+      - name: Install Claude Code CLI
         run: |
-          npm install -g @claude-ai/cli
-          echo "Claude CLI installed"
+          npm install -g @anthropic-ai/claude-code
+          echo "Claude Code CLI installed"
       
       - name: Run ESLint and capture output
         id: eslint
@@ -80,8 +80,8 @@ jobs:
           }
           PROMPT
               
-              # Send to Claude for analysis
-              claude -p --output-format=json --input-format=stream-json < prompt.json
+              # Send to Claude Code for analysis
+              claude-code --json < prompt.json
           }
           
           # Run analysis
@@ -126,7 +126,7 @@ jobs:
           }
           PROMPT
                   
-                  claude -p --output-format=json --input-format=stream-json < r-analysis-prompt.json | jq -r '.result' >> statistical-review.md
+                  claude-code --json < r-analysis-prompt.json | jq -r '.result' >> statistical-review.md
                   echo -e "\n---\n" >> statistical-review.md
               fi
           done

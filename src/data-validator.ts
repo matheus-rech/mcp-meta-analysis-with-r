@@ -102,7 +102,7 @@ export class DataValidator {
     }
   }
 
-  private async parseRevMan(revmanContent: string): Promise<any[]> {
+  private async parseRevMan(_revmanContent: string): Promise<any[]> {
     // RevMan parsing would be more complex - simplified for now
     throw new ValidationError('RevMan format parsing not yet implemented');
   }

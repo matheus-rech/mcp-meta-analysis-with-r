@@ -33,7 +33,6 @@ export class MetaAnalysisController {
 
   async createProject(dto: CreateProjectDto) {
     try {
-      const projectId = uuidv4();
       
       const parameters = {
         effect_measure: dto.effectMeasure,

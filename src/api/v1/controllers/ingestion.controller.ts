@@ -82,12 +82,14 @@ export class IngestionController {
     const processingId = uuidv4();
     
     // Start processing asynchronously
-    const processingPromise = pipeline.processData(
+    pipeline.processData(
       projectId,
       data,
       format,
       session.parameters
-    );
+    ).catch(error => {
+      logger.error('Pipeline processing failed', { processingId, error });
+    });
 
     // Store processing info
     logger.info('Starting intelligent processing', { 
@@ -133,7 +135,7 @@ export class IngestionController {
   /**
    * Stream processing updates
    */
-  async *streamProcessingUpdates(processingId: string) {
+  async *streamProcessingUpdates(_processingId: string) {
     // In a real implementation, would stream actual updates
     yield {
       type: 'progress',
@@ -212,7 +214,7 @@ export class IngestionController {
   /**
    * Get ingestion recommendations
    */
-  async getIngestionRecommendations(projectId: string, sampleData: string) {
+  async getIngestionRecommendations(projectId: string, _sampleData: string) {
     // Use Claude to analyze sample data and provide recommendations
     return {
       projectId,

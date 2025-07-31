@@ -15,7 +15,7 @@ export class DataController {
     this.dataValidator = new DataValidator();
   }
 
-  async uploadData(projectId: string, file: Express.Multer.File, options: any) {
+  async uploadData(projectId: string, file: Express.Multer.File, options: Record<string, unknown>) {
     const session = await this.sessionManager.getSession(projectId);
     if (!session) {
       throw new ValidationError('Project not found', { projectId });

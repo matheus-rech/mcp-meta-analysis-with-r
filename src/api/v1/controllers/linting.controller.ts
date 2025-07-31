@@ -7,7 +7,7 @@ import path from 'path';
 
 export class LintingController {
   private pipelines: Map<string, IntelligentLintingPipeline>;
-  private lintJobs: Map<string, any>;
+  private lintJobs: Map<string, { status: string; progress: number; result?: unknown }>;
 
   constructor() {
     this.pipelines = new Map();

@@ -1,4 +1,4 @@
-import { spawn, ChildProcess } from 'child_process';
+import { spawn } from 'child_process';
 import fs from 'fs-extra';
 import path from 'path';
 import { logger } from './logger.js';

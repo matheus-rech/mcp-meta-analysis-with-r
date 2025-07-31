@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { body, param, query, validationResult } from 'express-validator';
+import { body, param, validationResult } from 'express-validator';
 import { LintingController } from '../controllers/linting.controller.js';
 
 const router = Router();

@@ -14,8 +14,6 @@ jobs:
       contents: read
       pull-requests: write
       issues: write
-      # claude-code-action exchanges an OIDC token for its GitHub token when no github_token input is given.
-      id-token: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -25,6 +23,8 @@ jobs:
       - name: Claude Code Review
         uses: anthropics/claude-code-action@beta
         with:
+          # Without an explicit token the action mints one over OIDC, which it will only do when this file is byte-identical to the copy on the default branch, so any pull request that touches this workflow fails before it starts.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           direct_prompt: |
             Please provide a comprehensive code review of this pull request. Focus on:

@@ -26,6 +26,8 @@ jobs:
           # Without an explicit token the action mints one over OIDC, which it will only do when this file is byte-identical to the copy on the default branch, so any pull request that touches this workflow fails before it starts.
           github_token: ${{ secrets.GITHUB_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # The action refuses to review anything a bot opened unless that bot is named here, and GitAuto raises the pull requests in this repository.
+          allowed_bots: "gitauto-ai[bot]"
           direct_prompt: |
             Please provide a comprehensive code review of this pull request. Focus on:
             
